@@ -6,11 +6,11 @@ A SwiftUI macOS app for importing local .txt novels and reading them aloud.
 
 After finishing the anime *Eternal Life* on Bilibili, I felt bored. I didn’t want to read a novel, just listen to one. I also didn’t want to go through the trouble of setting up TTS on my phone, so I urged Codex to write it for me.
 
-This is also dedicated to my fish friends and fellow anime fans.
+This is also for fellow novel readers and anime fans.
 
 ---
 
-追毕永生之剧于B站，感到寂寞，不欲读书，惟欲听之。又不欲自行折腾手机之语音合成，遂督促Codex为我所作。此亦献鱼书友与剧友。
+追毕永生之剧于B站，感到寂寞，不欲读书，惟欲听之。又不欲自行折腾手机之语音合成，遂督促Codex为我所作。此亦献给书友与剧友。
 
 ## Current Scope
 
