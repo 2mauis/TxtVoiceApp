@@ -1,6 +1,67 @@
 import AVFoundation
 import Foundation
 
+enum SystemVoiceResolver {
+    static func isLikelyChineseMaleVoiceName(_ name: String) -> Bool {
+        preferredVoiceNames(for: .male).contains { normalized(name).contains(normalized($0)) }
+            || preferredVoiceNames(for: .uncle).contains { normalized(name).contains(normalized($0)) }
+    }
+
+    static func voice(for settings: TTSSettings) -> AVSpeechSynthesisVoice? {
+        if settings.systemVoicePreset == .custom,
+           let voiceID = settings.systemVoiceIdentifier,
+           let voice = AVSpeechSynthesisVoice(identifier: voiceID) {
+            return voice
+        }
+
+        let chineseVoices = AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("zh") }
+        let preferredNames = preferredVoiceNames(for: settings.systemVoicePreset)
+        for name in preferredNames {
+            if let voice = chineseVoices.first(where: { normalized($0.name).contains(normalized(name)) }) {
+                return voice
+            }
+        }
+
+        if let genderMatched = chineseVoices.first(where: { voice in
+            switch settings.systemVoicePreset {
+            case .female, .matureFemale:
+                return voice.gender == .female
+            case .male, .uncle:
+                return voice.gender == .male
+            case .custom:
+                return false
+            }
+        }) {
+            return genderMatched
+        }
+
+        return AVSpeechSynthesisVoice(language: "zh-CN") ?? chineseVoices.first
+    }
+
+    private static func preferredVoiceNames(for preset: SystemVoicePreset) -> [String] {
+        switch preset {
+        case .female:
+            return ["Tingting", "Ting-Ting", "Lili", "Li-li", "莉莉", "Meijia", "Mei-Jia", "Sinji", "Sin-Ji", "美佳"]
+        case .male:
+            return ["Han", "瀚", "Bobo", "Bo-bo", "波波", "Yushu", "Yu-Shu", "Li-mu", "Limu"]
+        case .uncle:
+            return ["Han", "瀚", "Bobo", "Bo-bo", "波波", "Li-mu", "Limu", "Yushu", "Yu-Shu"]
+        case .matureFemale:
+            return ["Lili", "Li-li", "莉莉", "Meijia", "Mei-Jia", "Tingting", "Ting-Ting", "Sinji", "Sin-Ji"]
+        case .custom:
+            return []
+        }
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+    }
+}
+
 @MainActor
 final class SpeechController: NSObject, ObservableObject {
     struct PlaybackCompletion: Equatable {
@@ -73,7 +134,7 @@ final class SpeechController: NSObject, ObservableObject {
 
         configureAudioSession()
 
-        if settings.engine == .iosSystem || settings.engine == .embeddedGemma4 {
+        if settings.engine == .iosSystem {
             state = .speaking
             enqueueSystemSpeech(settings: settings)
         } else {
@@ -129,11 +190,7 @@ final class SpeechController: NSObject, ObservableObject {
             let utterance = AVSpeechUtterance(string: chunk.text)
             utterance.rate = settings.systemRate
             utterance.pitchMultiplier = settings.systemPitch
-            if let voiceID = settings.systemVoiceIdentifier {
-                utterance.voice = AVSpeechSynthesisVoice(identifier: voiceID)
-            } else {
-                utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
-            }
+            utterance.voice = SystemVoiceResolver.voice(for: settings)
             synthesizer.speak(utterance)
         }
     }

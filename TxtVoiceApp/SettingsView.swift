@@ -8,11 +8,28 @@ struct SettingsView: View {
     @State private var localTTSTestStatus = ""
     @State private var isTestingLocalTTS = false
     @State private var testAudioPlayer: AVAudioPlayer?
+    @State private var systemVoiceTestStatus = ""
+    @State private var systemSpeechSynthesizer = AVSpeechSynthesizer()
 
     private var chineseVoices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("zh") }
             .sorted { $0.name < $1.name }
+    }
+
+    private var hasChineseMaleVoice: Bool {
+        chineseVoices.contains { voice in
+            voice.gender == .male || SystemVoiceResolver.isLikelyChineseMaleVoiceName(voice.name)
+        }
+    }
+
+    private var systemVoiceStatusText: String {
+        let names = chineseVoices.map(\.name).joined(separator: "、")
+        let installedText = names.isEmpty ? "未检测到中文系统语音" : "已安装中文语音：\(names)"
+        if hasChineseMaleVoice {
+            return "\(installedText)。男声/大叔音会优先选择中文男声。"
+        }
+        return "\(installedText)。未检测到中文男声，男声/大叔音会使用低音高和慢语速模拟。"
     }
 
     var body: some View {
@@ -37,35 +54,14 @@ struct SettingsView: View {
                     }
 
                     switch store.settings.engine {
-                    case .embeddedGemma4:
-                        EmptyView()
-
-                    case .gemma4Local:
-                        EmptyView()
-
                     case .iosSystem:
                         systemVoiceSection
-
-                    case .localCommand:
-                        kokoroSection
 
                     case .localKokoro:
                         kokoroSection
 
-                    case .kokoroCoreML:
-                        kokoroSection
-
                     case .localChatterbox:
                         chatterboxSection
-
-                    case .openAICompatible:
-                        EmptyView()
-
-                    case .gemini:
-                        EmptyView()
-
-                    case .customEndpoint:
-                        EmptyView()
                     }
 
                     diagnosticsSection
@@ -218,9 +214,23 @@ struct SettingsView: View {
 
     private var systemVoiceSection: some View {
         SettingsSection(title: "macOS 系统语音") {
+            SettingsRow("音色") {
+                Picker("", selection: $store.settings.systemVoicePreset) {
+                    ForEach(SystemVoicePreset.allCases) { preset in
+                        Text(preset.label).tag(preset)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 420, alignment: .leading)
+                .onChange(of: store.settings.systemVoicePreset) { _, preset in
+                    applySystemVoicePreset(preset)
+                }
+            }
+
             SettingsRow("声音") {
                 Picker("", selection: systemVoiceBinding) {
-                    Text("自动").tag("")
+                    Text(store.settings.systemVoicePreset == .custom ? "自动" : "按音色自动选择").tag("")
                     ForEach(chineseVoices, id: \.identifier) { voice in
                         Text("\(voice.name) · \(voice.language)").tag(voice.identifier)
                     }
@@ -228,6 +238,22 @@ struct SettingsView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(maxWidth: 360, alignment: .leading)
+            }
+            .disabled(store.settings.systemVoicePreset != .custom)
+
+            SettingsRow("系统音色") {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(systemVoiceStatusText)
+                        .font(.callout)
+                        .foregroundColor(hasChineseMaleVoice ? .secondary : .orange)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button {
+                        openSystemVoiceSettings()
+                    } label: {
+                        Label("管理语音", systemImage: "gearshape")
+                    }
+                }
             }
 
             SettingsRow("语速") {
@@ -241,7 +267,30 @@ struct SettingsView: View {
             }
 
             SettingsRow("音高") {
-                Slider(value: systemPitchBinding, in: 0.8...1.25)
+                HStack(spacing: 10) {
+                    Slider(value: systemPitchBinding, in: 0.50...1.30)
+                    Text(String(format: "%.2f", store.settings.systemPitch))
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 46, alignment: .trailing)
+                }
+            }
+
+            SettingsRow("测试") {
+                Button {
+                    testSystemVoice()
+                } label: {
+                    Label("测试播放", systemImage: "speaker.wave.2")
+                }
+            }
+
+            if !systemVoiceTestStatus.isEmpty {
+                SettingsRow("测试结果") {
+                    Text(systemVoiceTestStatus)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
         }
     }
@@ -317,6 +366,41 @@ struct SettingsView: View {
         }
     }
 
+    private func applySystemVoicePreset(_ preset: SystemVoicePreset) {
+        store.settings.systemRate = preset.defaultRate
+        store.settings.systemPitch = preset.defaultPitch
+        if preset != .custom {
+            store.settings.systemVoiceIdentifier = nil
+        }
+    }
+
+    private func testSystemVoice() {
+        systemSpeechSynthesizer.stopSpeaking(at: .immediate)
+        let utterance = AVSpeechUtterance(string: "你好，这是 macOS 系统语音测试。")
+        utterance.rate = store.settings.systemRate
+        utterance.pitchMultiplier = store.settings.systemPitch
+        utterance.voice = SystemVoiceResolver.voice(for: store.settings)
+        systemSpeechSynthesizer.speak(utterance)
+        let voiceName = utterance.voice?.name ?? "自动"
+        systemVoiceTestStatus = "正在播放：\(voiceName)"
+    }
+
+    private func openSystemVoiceSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent",
+            "x-apple.systempreferences:com.apple.Accessibility"
+        ]
+
+        for candidate in candidates {
+            guard let url = URL(string: candidate) else { continue }
+            if NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
+    }
+
     private func chooseChatterboxVoiceFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.audio, .wav]
@@ -333,18 +417,10 @@ struct SettingsView: View {
         defer { isTestingLocalTTS = false }
 
         do {
-            let audio: Data
-            if store.settings.engine == .kokoroCoreML {
-                audio = try await KokoroCoreMLDirectClient.synthesize(
-                    text: "你好，这是 TxtVoiceApp 本地语音测试。",
-                    settings: store.settings
-                )
-            } else {
-                audio = try await LocalTTSCommandClient.synthesize(
-                    text: "你好，这是 TxtVoiceApp 本地语音测试。",
-                    settings: store.settings
-                )
-            }
+            let audio = try await LocalTTSCommandClient.synthesize(
+                text: "你好，这是 TxtVoiceApp 本地语音测试。",
+                settings: store.settings
+            )
             let player = try AVAudioPlayer(data: audio)
             player.prepareToPlay()
             player.play()

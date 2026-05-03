@@ -23,7 +23,6 @@
 		AA000001000000000000000F /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000011 /* AppLogger.swift */; };
 		AA0000010000000000000010 /* LocalTTSCommandClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000012 /* LocalTTSCommandClient.swift */; };
 		AA0000010000000000000013 /* License.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000013 /* License.swift */; };
-		AA0000010000000000000014 /* KokoroCoreMLDirectClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000014 /* KokoroCoreMLDirectClient.swift */; };
 		AA0000010000000000000015 /* KokoroVocab.json in Resources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000015 /* KokoroVocab.json */; };
 /* End PBXBuildFile section */
 
@@ -46,7 +45,6 @@
 		AA0000020000000000000011 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
 		AA0000020000000000000012 /* LocalTTSCommandClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTTSCommandClient.swift; sourceTree = "<group>"; };
 		AA0000020000000000000013 /* License.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = License.swift; sourceTree = "<group>"; };
-		AA0000020000000000000014 /* KokoroCoreMLDirectClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KokoroCoreMLDirectClient.swift; sourceTree = "<group>"; };
 		AA0000020000000000000015 /* KokoroVocab.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = KokoroVocab.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -78,7 +76,6 @@
 				AA000002000000000000000C /* ReaderView.swift */,
 				AA000002000000000000000D /* SettingsView.swift */,
 				AA0000020000000000000013 /* License.swift */,
-				AA0000020000000000000014 /* KokoroCoreMLDirectClient.swift */,
 				AA0000020000000000000015 /* KokoroVocab.json */,
 				AA0000020000000000000002 /* Models.swift */,
 				AA0000020000000000000003 /* TextFileDecoder.swift */,
@@ -177,7 +174,6 @@
 				AA000001000000000000000C /* ReaderView.swift in Sources */,
 				AA000001000000000000000D /* SettingsView.swift in Sources */,
 				AA0000010000000000000013 /* License.swift in Sources */,
-				AA0000010000000000000014 /* KokoroCoreMLDirectClient.swift in Sources */,
 				AA0000010000000000000002 /* Models.swift in Sources */,
 				AA0000010000000000000003 /* TextFileDecoder.swift in Sources */,
 				AA0000010000000000000004 /* ChapterParser.swift in Sources */,

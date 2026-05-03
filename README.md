@@ -12,23 +12,21 @@ This is also dedicated to my fish friends and fellow anime fans.
 
 追毕永生之剧于B站，感到寂寞，不欲读书，惟欲听之。又不欲自行折腾手机之语音合成，遂督促Codex为我所作。此亦献鱼书友与剧友。
 
-## Features
+## Current Scope
 
 - Import TXT files from the Mac file picker.
 - Decode UTF-8, UTF-16, GB18030/GBK, and Big5 text.
 - Persist imported books in the app sandbox.
 - Detect common Chinese and English chapter headings.
-- Read selected chapters with playback controls.
+- Read selected chapters with playback controls, previous/next chapter navigation,
+  and saved reading state.
+- Generate and cache chapter audio in the background to reduce playback stalls.
 - Default to macOS system speech for zero setup local playback.
-- Optional local/offline TTS:
-  - Local command adapters for Chatterbox and Kokoro.
-  - Local TTS endpoint compatible with `/v1/audio/speech`.
-  - Kokoro CoreML/ANE uses the upstream Swift pipeline directly from the app;
-    Python is only used for offline testing or asset preparation.
-- Optional vendor TTS:
-  - Gemini native TTS REST API.
-  - OpenAI-compatible `/v1/audio/speech` APIs.
-  - Custom OpenAI-compatible endpoint for self-hosted or vendor bridges.
+- Optional local/offline TTS through command adapters:
+  - Kokoro for lighter local speech generation.
+  - Chatterbox for heavier multilingual voice generation.
+- Voice presets for female, male, deeper male, mature female, and custom voices
+  where the selected backend supports them.
 
 ## License
 
@@ -38,8 +36,9 @@ TxtVoiceApp is licensed under the Apache License, Version 2.0. See
 ## Local TTS Commands
 
 The app intentionally does not use Ollama/Gemma as TTS engines. They generate
-text, not audio. Local neural speech is integrated through the `本地 TTS 命令`
-engine or a local HTTP TTS endpoint.
+text, not audio. Local neural speech is integrated through dedicated local
+backend commands. The app passes one chapter chunk at a time to the backend and
+plays the generated audio after it is written to disk.
 
 The command contract is:
 
@@ -48,7 +47,9 @@ The command contract is:
 ```
 
 TxtVoiceApp writes UTF-8 text to `{input}` and plays the audio file written to
-`{output}`.
+`{output}`. The app also supports placeholders such as `{voice}`, `{speed}`,
+`{chatterboxVoice}`, `{exaggeration}`, and `{cfgWeight}` in the argument
+template.
 
 ### Kokoro
 
@@ -62,20 +63,13 @@ conda run -n txtvoice-tts python -m pip install "kokoro>=0.9.4" soundfile "misak
 App settings:
 
 ```text
-引擎: 本地 TTS 命令
-命令: /opt/homebrew/bin/conda
-参数模板: run -n txtvoice-tts python /Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}
-输出扩展名: wav
+引擎: Kokoro 本地 TTS
+命令: /opt/homebrew/Caskroom/miniforge/base/envs/txtvoice-tts/bin/python
+参数模板: /Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}
 ```
 
 Kokoro is lighter and useful for validating the offline pipeline. Judge Chinese
 novel narration quality by listening tests before making it the only option.
-TxtVoiceApp also supports `{voice}` and `{speed}` placeholders for local command
-templates:
-
-```text
-参数模板: run -n txtvoice-tts python /Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}
-```
 
 ### Chatterbox
 
@@ -89,10 +83,9 @@ conda run -n txtvoice-tts python -m pip install chatterbox-tts
 App settings:
 
 ```text
-引擎: 本地 TTS 命令
-命令: /opt/homebrew/bin/conda
-参数模板: run -n txtvoice-tts python /Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_chatterbox.py --input {input} --output {output}
-输出扩展名: wav
+引擎: Chatterbox 本地 TTS
+命令: /opt/homebrew/Caskroom/miniforge/base/envs/txtvoice-tts/bin/python
+参数模板: /Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_chatterbox.py --input {input} --output {output} --model multilingual --language zh --voice {chatterboxVoice} --exaggeration {exaggeration} --cfg-weight {cfgWeight}
 ```
 
 Chinese/multilingual defaults are built into the adapter:
@@ -100,6 +93,13 @@ Chinese/multilingual defaults are built into the adapter:
 ```sh
 conda run -n txtvoice-tts python scripts/local_tts_chatterbox.py --input input.txt --output output.wav --model multilingual --language zh
 ```
+
+## Removed Paths
+
+Earlier experiments with app-bundled language models and local text-generation
+engines were removed from the app surface. They were not reliable speech
+engines for this project. The maintained paths are now macOS system speech,
+Kokoro local command, and Chatterbox local command.
 
 ## Build And Run
 

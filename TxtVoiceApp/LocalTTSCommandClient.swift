@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 enum LocalTTSCommandClient {
@@ -99,13 +100,54 @@ enum LocalTTSCommandClient {
             throw ReaderError.invalidResponse("本地 TTS 命令没有生成输出文件：\(outputURL.path)")
         }
 
-        let data = try Data(contentsOf: outputURL)
+        let playbackURL = try transcodeToAAC(inputURL: outputURL)
+        let data = try Data(contentsOf: playbackURL)
         guard !data.isEmpty else {
             throw ReaderError.invalidResponse("本地 TTS 输出文件为空。")
         }
 
-        AppLogger.info("local TTS output bytes=\(data.count)", category: "local-tts")
+        AppLogger.info("local TTS playback bytes=\(data.count) file=\(playbackURL.lastPathComponent)", category: "local-tts")
         return data
+    }
+
+    private static func transcodeToAAC(inputURL: URL) throws -> URL {
+        let outputURL = inputURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("output.m4a")
+        try transcodeToAAC(inputURL: inputURL, outputURL: outputURL)
+        let sourceSize = fileSize(inputURL)
+        let compressedSize = fileSize(outputURL)
+        try? FileManager.default.removeItem(at: inputURL)
+        AppLogger.info(
+            "local TTS AAC transcode source=\(sourceSize) compressed=\(compressedSize); source removed",
+            category: "local-tts"
+        )
+        return outputURL
+    }
+
+    private static func transcodeToAAC(inputURL: URL, outputURL: URL) throws {
+        let inputFile = try AVAudioFile(forReading: inputURL)
+        let outputSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: inputFile.processingFormat.sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 48_000
+        ]
+        let outputFile = try AVAudioFile(forWriting: outputURL, settings: outputSettings)
+        let frameCapacity = AVAudioFrameCount(inputFile.processingFormat.sampleRate)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: inputFile.processingFormat, frameCapacity: frameCapacity) else {
+            throw ReaderError.invalidResponse("无法创建 AAC 转码缓冲区。")
+        }
+
+        while inputFile.framePosition < inputFile.length {
+            try inputFile.read(into: buffer)
+            guard buffer.frameLength > 0 else { break }
+            try outputFile.write(from: buffer)
+        }
+    }
+
+    private static func fileSize(_ url: URL) -> Int {
+        ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.intValue ?? 0
     }
 
     private static func sanitizedExtension(_ value: String?) -> String {

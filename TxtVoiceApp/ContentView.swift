@@ -128,9 +128,9 @@ private struct InitialLibraryView: View {
                 )
 
                 ModelReadinessRow(
-                    icon: "cpu",
-                    title: "Kokoro CoreML / ANE",
-                    detail: "App 运行时由 Swift 直接生成输入并调用 kokoro-coreml Swift Pipeline，不经过 Python wrapper。"
+                    icon: "waveform",
+                    title: "本地 TTS 命令",
+                    detail: "可选择 macOS 系统语音、Kokoro 或 Chatterbox，本地命令按章节后台生成音频。"
                 )
 
                 ModelReadinessRow(
