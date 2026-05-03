@@ -418,7 +418,7 @@ struct SettingsView: View {
 
         do {
             let audio = try await LocalTTSCommandClient.synthesize(
-                text: "你好，这是 TxtVoiceApp 本地语音测试。",
+                text: "你好，这是 txtnovelreader 本地语音测试。",
                 settings: store.settings
             )
             let player = try AVAudioPlayer(data: audio)

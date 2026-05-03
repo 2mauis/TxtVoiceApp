@@ -69,6 +69,12 @@ final class SpeechController: NSObject, ObservableObject {
         let offset: Int
     }
 
+    private struct AudioChunkAsset {
+        let index: Int
+        let chunk: SpeechChunk
+        let fileURL: URL
+    }
+
     enum PlaybackState: Equatable {
         case idle
         case preparing
@@ -101,8 +107,10 @@ final class SpeechController: NSObject, ObservableObject {
     private var chunks: [SpeechChunk] = []
     private var currentChunkIndex = 0
     private var remoteTask: Task<Void, Never>?
-    private var audioPrefetchTasks: [Int: Task<Data, Error>] = [:]
+    private var audioPrefetchTasks: [Int: Task<AudioChunkAsset, Error>] = [:]
+    private var audioSessionDirectory: URL?
     private var audioPlayer: AVAudioPlayer?
+    private var activeAudioPlayerID: ObjectIdentifier?
     private var audioContinuation: CheckedContinuation<Void, Error>?
     private var speechContinuation: CheckedContinuation<Void, Error>?
     private var playbackSessionID = UUID()
@@ -173,12 +181,10 @@ final class SpeechController: NSObject, ObservableObject {
         remoteTask = nil
         cancelAudioPrefetchTasks()
         synthesizer.stopSpeaking(at: .immediate)
-        audioPlayer?.stop()
-        audioPlayer = nil
-        audioContinuation?.resume(throwing: CancellationError())
-        audioContinuation = nil
+        stopActiveAudioPlayer()
         speechContinuation?.resume(throwing: CancellationError())
         speechContinuation = nil
+        removeAudioSessionDirectory()
         chunks = []
         currentChunkIndex = 0
         currentSnippet = ""
@@ -196,7 +202,11 @@ final class SpeechController: NSObject, ObservableObject {
     }
 
     private func runRemoteSpeech(settings: TTSSettings, sessionID: UUID) async {
-        let prefetchDepth = settings.engine == .localChatterbox ? 1 : 2
+        let prefetchDepth = settings.engine == .localChatterbox ? 2 : 3
+        let initialBufferCount = min(settings.engine == .localChatterbox ? 1 : 2, chunks.count)
+        let sessionDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("txtnovelreader-playback-\(sessionID.uuidString)", isDirectory: true)
+        audioSessionDirectory = sessionDirectory
 
         func schedulePrefetch(_ index: Int) {
             guard playbackSessionID == sessionID,
@@ -208,16 +218,24 @@ final class SpeechController: NSObject, ObservableObject {
                 category: "speech"
             )
             audioPrefetchTasks[index] = Task(priority: .userInitiated) {
-                try await RemoteTTSClient.synthesize(text: chunk.text, settings: settings)
+                let fileURL = try await RemoteTTSClient.synthesizeToFile(
+                    text: chunk.text,
+                    settings: settings,
+                    outputDirectory: sessionDirectory,
+                    fileName: String(format: "chunk-%05d.m4a", index)
+                )
+                return AudioChunkAsset(index: index, chunk: chunk, fileURL: fileURL)
             }
         }
 
         do {
             guard playbackSessionID == sessionID else { return }
+            try FileManager.default.createDirectory(at: sessionDirectory, withIntermediateDirectories: true)
             cancelAudioPrefetchTasks()
             for index in 0..<min(prefetchDepth, chunks.count) {
                 schedulePrefetch(index)
             }
+            try await waitForInitialBuffer(count: initialBufferCount, sessionID: sessionID)
 
             for (index, chunk) in chunks.enumerated() {
                 try Task.checkCancellation()
@@ -234,30 +252,45 @@ final class SpeechController: NSObject, ObservableObject {
                 guard let audioTask = audioPrefetchTasks.removeValue(forKey: index) else {
                     throw ReaderError.invalidResponse("后台 TTS 任务没有启动。")
                 }
-                let audio = try await audioTask.value
+                let asset = try await audioTask.value
                 try Task.checkCancellation()
                 guard playbackSessionID == sessionID else { return }
                 schedulePrefetch(index + prefetchDepth)
                 state = .speaking
-                try await playAudio(audio)
+                try await playAudio(asset)
+                try? FileManager.default.removeItem(at: asset.fileURL)
                 guard playbackSessionID == sessionID else { return }
                 currentOffset = chunk.endOffset
             }
             cancelAudioPrefetchTasks()
+            removeAudioSessionDirectory()
             finishPlaybackNaturally()
         } catch is CancellationError {
             AppLogger.info("remote speech cancelled", category: "speech")
             if playbackSessionID == sessionID {
                 cancelAudioPrefetchTasks()
+                stopActiveAudioPlayer()
+                removeAudioSessionDirectory()
                 state = .idle
             }
         } catch {
             guard playbackSessionID == sessionID else { return }
             AppLogger.error("remote speech failed: \(error.localizedDescription)", category: "speech")
             cancelAudioPrefetchTasks()
+            stopActiveAudioPlayer()
+            removeAudioSessionDirectory()
             currentSnippet = "\(error.localizedDescription) 已自动切换 macOS 系统语音。"
             state = .speaking
             enqueueSystemSpeech(settings: settings)
+        }
+    }
+
+    private func waitForInitialBuffer(count: Int, sessionID: UUID) async throws {
+        guard count > 1 else { return }
+        for index in 0..<count {
+            try Task.checkCancellation()
+            guard playbackSessionID == sessionID else { throw CancellationError() }
+            _ = try await audioPrefetchTasks[index]?.value
         }
     }
 
@@ -268,18 +301,56 @@ final class SpeechController: NSObject, ObservableObject {
         audioPrefetchTasks.removeAll()
     }
 
-    private func playAudio(_ data: Data) async throws {
+    private func playAudio(_ asset: AudioChunkAsset) async throws {
         try await withCheckedThrowingContinuation { continuation in
             do {
+                audioPlayer?.delegate = nil
+                audioPlayer = nil
+                activeAudioPlayerID = nil
                 audioContinuation = continuation
-                audioPlayer = try AVAudioPlayer(data: data)
-                audioPlayer?.delegate = self
-                audioPlayer?.prepareToPlay()
-                audioPlayer?.play()
+                let player = try AVAudioPlayer(contentsOf: asset.fileURL)
+                audioPlayer = player
+                activeAudioPlayerID = ObjectIdentifier(player)
+                player.delegate = self
+                player.prepareToPlay()
+                guard player.play() else {
+                    player.delegate = nil
+                    if audioPlayer === player {
+                        audioPlayer = nil
+                        activeAudioPlayerID = nil
+                    }
+                    audioContinuation = nil
+                    continuation.resume(throwing: ReaderError.invalidResponse("音频播放启动失败。"))
+                    return
+                }
+                AppLogger.info(
+                    "audio play index=\(asset.index) start=\(asset.chunk.startOffset) file=\(asset.fileURL.lastPathComponent)",
+                    category: "speech"
+                )
             } catch {
+                audioPlayer?.delegate = nil
+                audioPlayer = nil
+                activeAudioPlayerID = nil
                 audioContinuation = nil
                 continuation.resume(throwing: error)
             }
+        }
+    }
+
+    private func stopActiveAudioPlayer() {
+        audioPlayer?.stop()
+        audioPlayer?.delegate = nil
+        audioPlayer = nil
+        activeAudioPlayerID = nil
+        audioContinuation?.resume(throwing: CancellationError())
+        audioContinuation = nil
+    }
+
+    private func removeAudioSessionDirectory() {
+        guard let directory = audioSessionDirectory else { return }
+        audioSessionDirectory = nil
+        Task.detached(priority: .utility) {
+            try? FileManager.default.removeItem(at: directory)
         }
     }
 
@@ -331,14 +402,28 @@ extension SpeechController: AVSpeechSynthesizerDelegate {
 
 extension SpeechController: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let playerID = ObjectIdentifier(player)
         Task { @MainActor in
-            self.audioContinuation?.resume()
+            guard self.activeAudioPlayerID == playerID else { return }
+            self.audioPlayer?.delegate = nil
+            self.audioPlayer = nil
+            self.activeAudioPlayerID = nil
+            if flag {
+                self.audioContinuation?.resume()
+            } else {
+                self.audioContinuation?.resume(throwing: ReaderError.invalidResponse("音频播放中断。"))
+            }
             self.audioContinuation = nil
         }
     }
 
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        let playerID = ObjectIdentifier(player)
         Task { @MainActor in
+            guard self.activeAudioPlayerID == playerID else { return }
+            self.audioPlayer?.delegate = nil
+            self.audioPlayer = nil
+            self.activeAudioPlayerID = nil
             self.audioContinuation?.resume(throwing: error ?? ReaderError.invalidResponse("音频解码失败。"))
             self.audioContinuation = nil
         }

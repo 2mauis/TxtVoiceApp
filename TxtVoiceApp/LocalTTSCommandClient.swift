@@ -3,8 +3,35 @@ import Foundation
 
 enum LocalTTSCommandClient {
     static func synthesize(text: String, settings: TTSSettings) async throws -> Data {
+        let outputDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("txtnovelreader-tts-result-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: outputDirectory) }
+        let playbackURL = try await synthesizeToFile(
+            text: text,
+            settings: settings,
+            outputDirectory: outputDirectory,
+            fileName: "output.m4a"
+        )
+        let data = try Data(contentsOf: playbackURL)
+        guard !data.isEmpty else {
+            throw ReaderError.invalidResponse("本地 TTS 输出文件为空。")
+        }
+        return data
+    }
+
+    static func synthesizeToFile(
+        text: String,
+        settings: TTSSettings,
+        outputDirectory: URL,
+        fileName: String
+    ) async throws -> URL {
         let task = Task.detached(priority: .userInitiated) {
-            try run(text: text, settings: settings)
+            try runToFile(
+                text: text,
+                settings: settings,
+                outputDirectory: outputDirectory,
+                fileName: fileName
+            )
         }
         return try await withTaskCancellationHandler {
             try await task.value
@@ -13,7 +40,12 @@ enum LocalTTSCommandClient {
         }
     }
 
-    private static func run(text: String, settings: TTSSettings) throws -> Data {
+    private static func runToFile(
+        text: String,
+        settings: TTSSettings,
+        outputDirectory: URL,
+        fileName: String
+    ) throws -> URL {
         let command = settings.effectiveLocalTTSCommandPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty else {
             throw ReaderError.invalidResponse("本地 TTS 命令为空。")
@@ -22,13 +54,26 @@ enum LocalTTSCommandClient {
         let template = settings.effectiveLocalTTSArgumentsTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
         let outputExtension = sanitizedExtension(settings.effectiveLocalTTSOutputExtension)
         let workDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("TxtVoiceTTS-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("txtnovelreader-tts-\(UUID().uuidString)", isDirectory: true)
         let inputURL = workDirectory.appendingPathComponent("input.txt")
         let outputURL = workDirectory.appendingPathComponent("output.\(outputExtension)")
+        let playbackURL = workDirectory.appendingPathComponent("playback.m4a")
+        let stdoutURL = workDirectory.appendingPathComponent("stdout.log")
+        let stderrURL = workDirectory.appendingPathComponent("stderr.log")
+        let finalURL = outputDirectory.appendingPathComponent(fileName)
 
         try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: workDirectory) }
         try text.write(to: inputURL, atomically: true, encoding: .utf8)
+        FileManager.default.createFile(atPath: stdoutURL.path, contents: nil)
+        FileManager.default.createFile(atPath: stderrURL.path, contents: nil)
+        let stdoutHandle = try FileHandle(forWritingTo: stdoutURL)
+        let stderrHandle = try FileHandle(forWritingTo: stderrURL)
+        defer {
+            try? stdoutHandle.close()
+            try? stderrHandle.close()
+        }
 
         var arguments = splitArguments(template).map { argument in
             argument
@@ -61,10 +106,8 @@ enum LocalTTSCommandClient {
         process.currentDirectoryURL = workDirectory
         process.environment = mergedEnvironment()
 
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        process.standardOutput = stdoutHandle
+        process.standardError = stderrHandle
 
         do {
             try process.run()
@@ -84,8 +127,10 @@ enum LocalTTSCommandClient {
             throw ReaderError.invalidResponse("本地 TTS 命令启动失败：\(error.localizedDescription)")
         }
 
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        try? stdoutHandle.close()
+        try? stderrHandle.close()
+        let stdout = String(data: (try? Data(contentsOf: stdoutURL)) ?? Data(), encoding: .utf8) ?? ""
+        let stderr = String(data: (try? Data(contentsOf: stderrURL)) ?? Data(), encoding: .utf8) ?? ""
         AppLogger.info(
             "local TTS exit=\(process.terminationStatus) stdout=\(AppLogger.snippet(stdout)) stderr=\(AppLogger.snippet(stderr))",
             category: "local-tts"
@@ -100,29 +145,21 @@ enum LocalTTSCommandClient {
             throw ReaderError.invalidResponse("本地 TTS 命令没有生成输出文件：\(outputURL.path)")
         }
 
-        let playbackURL = try transcodeToAAC(inputURL: outputURL)
-        let data = try Data(contentsOf: playbackURL)
-        guard !data.isEmpty else {
+        try transcodeToAAC(inputURL: outputURL, outputURL: playbackURL)
+        let sourceSize = fileSize(outputURL)
+        let compressedSize = fileSize(playbackURL)
+        guard compressedSize > 0 else {
             throw ReaderError.invalidResponse("本地 TTS 输出文件为空。")
         }
+        try? FileManager.default.removeItem(at: outputURL)
+        try? FileManager.default.removeItem(at: finalURL)
+        try FileManager.default.moveItem(at: playbackURL, to: finalURL)
 
-        AppLogger.info("local TTS playback bytes=\(data.count) file=\(playbackURL.lastPathComponent)", category: "local-tts")
-        return data
-    }
-
-    private static func transcodeToAAC(inputURL: URL) throws -> URL {
-        let outputURL = inputURL
-            .deletingLastPathComponent()
-            .appendingPathComponent("output.m4a")
-        try transcodeToAAC(inputURL: inputURL, outputURL: outputURL)
-        let sourceSize = fileSize(inputURL)
-        let compressedSize = fileSize(outputURL)
-        try? FileManager.default.removeItem(at: inputURL)
         AppLogger.info(
-            "local TTS AAC transcode source=\(sourceSize) compressed=\(compressedSize); source removed",
+            "local TTS asset source=\(sourceSize) compressed=\(compressedSize) file=\(finalURL.lastPathComponent)",
             category: "local-tts"
         )
-        return outputURL
+        return finalURL
     }
 
     private static func transcodeToAAC(inputURL: URL, outputURL: URL) throws {
@@ -222,7 +259,7 @@ enum LocalTTSCommandClient {
             .joined(separator: ":")
         environment["PYTHONUNBUFFERED"] = "1"
         environment["HF_HUB_DISABLE_XET"] = "1"
-        environment["NUMBA_CACHE_DIR"] = "/private/tmp/txtvoice-numba-cache"
+        environment["NUMBA_CACHE_DIR"] = "/private/tmp/txtnovelreader-numba-cache"
         environment["NUMBA_DISABLE_CACHE"] = "1"
         return environment
     }

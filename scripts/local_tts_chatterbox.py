@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate speech with local Chatterbox TTS for TxtVoiceApp.
+"""Generate speech with local Chatterbox TTS for txtnovelreader.
 
-This adapter is intentionally small: TxtVoiceApp writes a text chunk to
+This adapter is intentionally small: txtnovelreader writes a text chunk to
 --input, this script writes an audio file to --output, and the app plays it.
 Install dependency first:
 
@@ -22,13 +22,13 @@ from pathlib import Path
 
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
-os.environ.setdefault("NUMBA_CACHE_DIR", "/private/tmp/txtvoice-numba-cache")
+os.environ.setdefault("NUMBA_CACHE_DIR", "/private/tmp/txtnovelreader-numba-cache")
 os.environ.setdefault("NUMBA_DISABLE_CACHE", "1")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="TxtVoiceApp Chatterbox TTS adapter")
-    parser.add_argument("--input", required=True, help="UTF-8 text file from TxtVoiceApp")
+    parser = argparse.ArgumentParser(description="txtnovelreader Chatterbox TTS adapter")
+    parser.add_argument("--input", required=True, help="UTF-8 text file from txtnovelreader")
     parser.add_argument("--output", required=True, help="Output wav file path")
     parser.add_argument(
         "--model",

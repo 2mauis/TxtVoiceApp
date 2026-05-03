@@ -1,4 +1,4 @@
-# TxtVoiceApp
+# txtnovelreader
 
 A SwiftUI macOS app for importing local .txt novels and reading them aloud.
 
@@ -30,7 +30,7 @@ This is also for fellow novel readers and anime fans.
 
 ## License
 
-TxtVoiceApp is licensed under the Apache License, Version 2.0. See
+txtnovelreader is licensed under the Apache License, Version 2.0. See
 [`LICENSE`](LICENSE).
 
 ## Local TTS Commands
@@ -46,7 +46,7 @@ The command contract is:
 --input {input} --output {output}
 ```
 
-TxtVoiceApp writes UTF-8 text to `{input}` and plays the audio file written to
+txtnovelreader writes UTF-8 text to `{input}` and plays the audio file written to
 `{output}`. The app also supports placeholders such as `{voice}`, `{speed}`,
 `{chatterboxVoice}`, `{exaggeration}`, and `{cfgWeight}` in the argument
 template.
@@ -65,7 +65,7 @@ App settings:
 ```text
 引擎: Kokoro 本地 TTS
 命令: /opt/homebrew/Caskroom/miniforge/base/envs/txtvoice-tts/bin/python
-参数模板: /Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}
+参数模板: /path/to/txtnovelreader/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}
 ```
 
 Kokoro is lighter and useful for validating the offline pipeline. Judge Chinese
@@ -85,7 +85,7 @@ App settings:
 ```text
 引擎: Chatterbox 本地 TTS
 命令: /opt/homebrew/Caskroom/miniforge/base/envs/txtvoice-tts/bin/python
-参数模板: /Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_chatterbox.py --input {input} --output {output} --model multilingual --language zh --voice {chatterboxVoice} --exaggeration {exaggeration} --cfg-weight {cfgWeight}
+参数模板: /path/to/txtnovelreader/scripts/local_tts_chatterbox.py --input {input} --output {output} --model multilingual --language zh --voice {chatterboxVoice} --exaggeration {exaggeration} --cfg-weight {cfgWeight}
 ```
 
 Chinese/multilingual defaults are built into the adapter:
@@ -112,11 +112,11 @@ xcodebuild -project TxtVoiceApp.xcodeproj -scheme TxtVoiceApp -sdk macosx -confi
 Run:
 
 ```sh
-open /private/tmp/TxtVoiceMacDerivedData/Build/Products/Debug/TxtVoiceApp.app
+open /private/tmp/TxtVoiceMacDerivedData/Build/Products/Debug/txtnovelreader.app
 ```
 
 Verified app artifact:
 
 ```text
-/private/tmp/TxtVoiceMacDerivedData/Build/Products/Debug/TxtVoiceApp.app
+/private/tmp/TxtVoiceMacDerivedData/Build/Products/Debug/txtnovelreader.app
 ```

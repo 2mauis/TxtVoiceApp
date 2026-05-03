@@ -1,4 +1,4 @@
-// Copyright 2026 TxtVoiceApp contributors
+// Copyright 2026 txtnovelreader contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,6 @@ import Foundation
 
 enum AppLicense {
     static let name = "Apache License 2.0"
-    static let copyright = "Copyright 2026 TxtVoiceApp contributors"
+    static let copyright = "Copyright 2026 txtnovelreader contributors"
     static let url = URL(string: "https://www.apache.org/licenses/LICENSE-2.0")!
 }

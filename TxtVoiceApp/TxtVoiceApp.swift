@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct TxtVoiceApp: App {
+struct TxtNovelReaderApp: App {
     @StateObject private var library = BookLibraryStore()
     @StateObject private var speech = SpeechController()
     @StateObject private var settings = TTSSettingsStore()

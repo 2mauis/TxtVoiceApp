@@ -194,10 +194,21 @@ enum ChatterboxVoicePreset: String, CaseIterable, Identifiable, Codable {
 struct TTSSettings: Codable, Equatable {
     static let localPythonCommandPath = "/opt/homebrew/Caskroom/miniforge/base/envs/txtvoice-tts/bin/python"
     static let kokoroCondaCommandPath = localPythonCommandPath
-    static let kokoroCondaArgumentsTemplate = "/Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}"
+    static var kokoroCondaArgumentsTemplate: String {
+        "\(repositoryRootPath)/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}"
+    }
     static let chatterboxCondaCommandPath = localPythonCommandPath
-    static let chatterboxCondaArgumentsTemplate = "/Volumes/DATACS/work/code/TxtVoiceApp/scripts/local_tts_chatterbox.py --input {input} --output {output} --model multilingual --language zh --voice {chatterboxVoice} --exaggeration {exaggeration} --cfg-weight {cfgWeight}"
+    static var chatterboxCondaArgumentsTemplate: String {
+        "\(repositoryRootPath)/scripts/local_tts_chatterbox.py --input {input} --output {output} --model multilingual --language zh --voice {chatterboxVoice} --exaggeration {exaggeration} --cfg-weight {cfgWeight}"
+    }
     static let kokoroOutputExtension = "wav"
+
+    private static var repositoryRootPath: String {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .path
+    }
 
     var engine: TTSEngineChoice = .iosSystem
 
@@ -293,10 +304,12 @@ final class TTSSettingsStore: ObservableObject {
         didSet { save() }
     }
 
-    private let key = "TxtVoice.TTSSettings"
+    private let key = "txtnovelreader.TTSSettings"
+    private let legacyKey = "TxtVoice.TTSSettings"
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: key),
+        let data = UserDefaults.standard.data(forKey: key) ?? UserDefaults.standard.data(forKey: legacyKey)
+        if let data,
            var decoded = try? JSONDecoder().decode(TTSSettings.self, from: data) {
             var shouldSaveMigratedSettings = false
             if decoded.localTTSArgumentsTemplate?.contains("local_tts_chatterbox.py") == true {
@@ -309,7 +322,7 @@ final class TTSSettingsStore: ObservableObject {
                 shouldSaveMigratedSettings = true
             }
             self.settings = decoded
-            if shouldSaveMigratedSettings {
+            if shouldSaveMigratedSettings || UserDefaults.standard.data(forKey: key) == nil {
                 save()
             }
         } else {

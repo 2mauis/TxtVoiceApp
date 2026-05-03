@@ -8,6 +8,8 @@ final class BookLibraryStore: ObservableObject {
     private let rootURL: URL
     private let importsURL: URL
     private let metadataURL: URL
+    private let legacyAppSupportImportsURL: URL
+    private let legacyAppSupportMetadataURL: URL
     private let legacyRootURL: URL
     private let legacyImportsURL: URL
     private let legacyMetadataURL: URL
@@ -15,9 +17,12 @@ final class BookLibraryStore: ObservableObject {
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        self.rootURL = appSupportURL.appendingPathComponent("TxtVoiceApp", isDirectory: true)
+        self.rootURL = appSupportURL.appendingPathComponent("txtnovelreader", isDirectory: true)
         self.importsURL = rootURL.appendingPathComponent("Imports", isDirectory: true)
         self.metadataURL = rootURL.appendingPathComponent("library.json")
+        let legacyAppSupportRootURL = appSupportURL.appendingPathComponent("TxtVoiceApp", isDirectory: true)
+        self.legacyAppSupportImportsURL = legacyAppSupportRootURL.appendingPathComponent("Imports", isDirectory: true)
+        self.legacyAppSupportMetadataURL = legacyAppSupportRootURL.appendingPathComponent("library.json")
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         self.legacyRootURL = documentsURL.appendingPathComponent("TxtVoice", isDirectory: true)
         self.legacyImportsURL = legacyRootURL.appendingPathComponent("Imports", isDirectory: true)
@@ -91,21 +96,31 @@ final class BookLibraryStore: ObservableObject {
     }
 
     private func migrateLegacyLibraryIfNeeded() {
-        guard !fileManager.fileExists(atPath: metadataURL.path),
-              fileManager.fileExists(atPath: legacyMetadataURL.path) else {
+        guard !fileManager.fileExists(atPath: metadataURL.path) else {
             return
         }
 
-        try? fileManager.copyItem(at: legacyMetadataURL, to: metadataURL)
+        if migrateLibrary(fromMetadata: legacyAppSupportMetadataURL, imports: legacyAppSupportImportsURL) {
+            return
+        }
 
-        guard let fileNames = try? fileManager.contentsOfDirectory(atPath: legacyImportsURL.path) else { return }
+        _ = migrateLibrary(fromMetadata: legacyMetadataURL, imports: legacyImportsURL)
+    }
+
+    private func migrateLibrary(fromMetadata metadata: URL, imports: URL) -> Bool {
+        guard fileManager.fileExists(atPath: metadata.path) else { return false }
+
+        try? fileManager.copyItem(at: metadata, to: metadataURL)
+
+        guard let fileNames = try? fileManager.contentsOfDirectory(atPath: imports.path) else { return true }
         for fileName in fileNames {
-            let source = legacyImportsURL.appendingPathComponent(fileName)
+            let source = imports.appendingPathComponent(fileName)
             let destination = importsURL.appendingPathComponent(fileName)
             if !fileManager.fileExists(atPath: destination.path) {
                 try? fileManager.copyItem(at: source, to: destination)
             }
         }
+        return true
     }
 
     private func load() {
