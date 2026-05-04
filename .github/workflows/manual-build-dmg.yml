@@ -16,6 +16,10 @@ jobs:
   build-dmg:
     name: Build macOS DMG
     runs-on: macos-latest
+    env:
+      KOKORO_ENV_NAME: txtnovelreader-kokoro
+      MINIFORGE_HOME: ${{ runner.temp }}/miniforge
+      TXTVOICE_TTS_ENV: ${{ runner.temp }}/miniforge/envs/txtnovelreader-kokoro
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,34 +33,31 @@ jobs:
         if: ${{ inputs.package_mode == 'full' }}
         run: |
           set -euo pipefail
-          curl -L -o miniforge.sh \
+          curl -L -o "$RUNNER_TEMP/miniforge.sh" \
             https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh
-          bash miniforge.sh -b -p "$HOME/miniforge"
-          "$HOME/miniforge/bin/conda" create -n txtnovelreader-kokoro -c conda-forge --override-channels python=3.11 pip -y
-          "$HOME/miniforge/bin/conda" run -n txtnovelreader-kokoro python -m ensurepip --upgrade
-          "$HOME/miniforge/bin/conda" run -n txtnovelreader-kokoro python -m pip --version
-          "$HOME/miniforge/bin/conda" run -n txtnovelreader-kokoro python -m pip install \
+          rm -rf "$MINIFORGE_HOME"
+          bash "$RUNNER_TEMP/miniforge.sh" -b -p "$MINIFORGE_HOME"
+          "$MINIFORGE_HOME/bin/conda" create -n "$KOKORO_ENV_NAME" -c conda-forge --override-channels python=3.11 pip -y
+          "$MINIFORGE_HOME/bin/conda" run -n "$KOKORO_ENV_NAME" python -m ensurepip --upgrade
+          "$TXTVOICE_TTS_ENV/bin/python" -m pip --version
+          "$TXTVOICE_TTS_ENV/bin/python" -m pip install \
             "kokoro>=0.9.4" soundfile "misaki[zh]>=0.9.4"
 
-      - name: Warm Kokoro model cache
+      - name: Verify full package runtime
         if: ${{ inputs.package_mode == 'full' }}
         run: |
           set -euo pipefail
-          printf "你好，这是 txtnovelreader Kokoro 模型缓存准备。" > /tmp/txtnovelreader-kokoro-cache.txt
-          for voice in zf_xiaoxiao zm_yunxi zm_yunjian zf_xiaobei; do
-            "$HOME/miniforge/envs/txtnovelreader-kokoro/bin/python" \
-              scripts/local_tts_kokoro.py \
-              --input /tmp/txtnovelreader-kokoro-cache.txt \
-              --output "/tmp/txtnovelreader-kokoro-cache-$voice.wav" \
-              --voice "$voice" \
-              --speed 1.0
-          done
+          test -x "$TXTVOICE_TTS_ENV/bin/python"
+          "$TXTVOICE_TTS_ENV/bin/python" - <<'PY'
+          import kokoro
+          import soundfile
+          print("kokoro runtime ok")
+          PY
 
       - name: Create full DMG
         if: ${{ inputs.package_mode == 'full' }}
         run: |
           set -euo pipefail
-          export TXTVOICE_TTS_ENV="$HOME/miniforge/envs/txtnovelreader-kokoro"
           scripts/package_full_dmg.sh
           dmg_path="$(ls -t dist/txtnovelreader-full-*.dmg | head -n 1)"
           echo "DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
