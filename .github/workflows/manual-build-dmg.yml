@@ -32,7 +32,9 @@ jobs:
           curl -L -o miniforge.sh \
             https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh
           bash miniforge.sh -b -p "$HOME/miniforge"
-          "$HOME/miniforge/bin/conda" create -n txtnovelreader-kokoro -c conda-forge --override-channels python=3.11 -y
+          "$HOME/miniforge/bin/conda" create -n txtnovelreader-kokoro -c conda-forge --override-channels python=3.11 pip -y
+          "$HOME/miniforge/bin/conda" run -n txtnovelreader-kokoro python -m ensurepip --upgrade
+          "$HOME/miniforge/bin/conda" run -n txtnovelreader-kokoro python -m pip --version
           "$HOME/miniforge/bin/conda" run -n txtnovelreader-kokoro python -m pip install \
             "kokoro>=0.9.4" soundfile "misaki[zh]>=0.9.4"
 
