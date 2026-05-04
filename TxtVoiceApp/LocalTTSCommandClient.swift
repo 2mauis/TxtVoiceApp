@@ -51,7 +51,6 @@ enum LocalTTSCommandClient {
             throw ReaderError.invalidResponse("本地 TTS 命令为空。")
         }
 
-        let template = settings.effectiveLocalTTSArgumentsTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
         let outputExtension = sanitizedExtension(settings.effectiveLocalTTSOutputExtension)
         let workDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("txtnovelreader-tts-\(UUID().uuidString)", isDirectory: true)
@@ -75,21 +74,30 @@ enum LocalTTSCommandClient {
             try? stderrHandle.close()
         }
 
-        var arguments = splitArguments(template).map { argument in
-            argument
-                .replacingOccurrences(of: "{input}", with: inputURL.path)
-                .replacingOccurrences(of: "{output}", with: outputURL.path)
-                .replacingOccurrences(of: "{voice}", with: settings.resolvedLocalTTSVoice)
-                .replacingOccurrences(of: "{speed}", with: String(format: "%.2f", settings.localTTSSpeed))
-                .replacingOccurrences(of: "{text}", with: text)
-        }
+        var arguments = arguments(
+            inputURL: inputURL,
+            outputURL: outputURL,
+            text: text,
+            settings: settings
+        )
 
         let executableURL: URL
         if command.contains("/") {
+            guard FileManager.default.isExecutableFile(atPath: command) else {
+                AppLogger.error("local TTS python missing or not executable: \(command)", category: "local-tts")
+                throw ReaderError.invalidResponse("本地 TTS Python 不存在或不可执行：\(command)")
+            }
             executableURL = URL(fileURLWithPath: command)
         } else {
             executableURL = URL(fileURLWithPath: "/usr/bin/env")
             arguments.insert(command, at: 0)
+        }
+
+        if settings.engine == .localKokoro,
+           let scriptPath = arguments.first,
+           !FileManager.default.fileExists(atPath: scriptPath) {
+            AppLogger.error("local TTS script missing: \(scriptPath)", category: "local-tts")
+            throw ReaderError.invalidResponse("本地 TTS 脚本不存在：\(scriptPath)")
         }
 
         AppLogger.info(
@@ -157,6 +165,41 @@ enum LocalTTSCommandClient {
             category: "local-tts"
         )
         return finalURL
+    }
+
+    private static func arguments(
+        inputURL: URL,
+        outputURL: URL,
+        text: String,
+        settings: TTSSettings
+    ) -> [String] {
+        if settings.engine == .localKokoro {
+            return [
+                TTSSettings.kokoroScriptPath,
+                "--input",
+                inputURL.path,
+                "--output",
+                outputURL.path,
+                "--voice",
+                settings.resolvedLocalTTSVoice,
+                "--speed",
+                formattedSpeed(settings.localTTSSpeed)
+            ]
+        }
+
+        let template = settings.effectiveLocalTTSArgumentsTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        return splitArguments(template).map { argument in
+            argument
+                .replacingOccurrences(of: "{input}", with: inputURL.path)
+                .replacingOccurrences(of: "{output}", with: outputURL.path)
+                .replacingOccurrences(of: "{voice}", with: settings.resolvedLocalTTSVoice)
+                .replacingOccurrences(of: "{speed}", with: formattedSpeed(settings.localTTSSpeed))
+                .replacingOccurrences(of: "{text}", with: text)
+        }
+    }
+
+    private static func formattedSpeed(_ value: Double) -> String {
+        String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     private static func transcodeToAAC(inputURL: URL, outputURL: URL) throws {
@@ -250,7 +293,7 @@ enum LocalTTSCommandClient {
                 let pythonEnv = localTTSRoot.appendingPathComponent("python-env", isDirectory: true)
                 if FileManager.default.fileExists(atPath: pythonEnv.path) {
                     environment["CONDA_PREFIX"] = pythonEnv.path
-                    environment["CONDA_DEFAULT_ENV"] = "txtvoice-tts"
+                    environment["CONDA_DEFAULT_ENV"] = "txtnovelreader-kokoro"
                 }
 
                 let huggingFaceHome = localTTSRoot.appendingPathComponent("huggingface", isDirectory: true)
@@ -258,6 +301,8 @@ enum LocalTTSCommandClient {
                     environment["HF_HOME"] = huggingFaceHome.path
                     environment["HUGGINGFACE_HUB_CACHE"] = huggingFaceHome.appendingPathComponent("hub", isDirectory: true).path
                     environment["TRANSFORMERS_CACHE"] = huggingFaceHome.appendingPathComponent("hub", isDirectory: true).path
+                    environment["HF_HUB_OFFLINE"] = "1"
+                    environment["TRANSFORMERS_OFFLINE"] = "1"
                 }
 
                 let torchHome = localTTSRoot.appendingPathComponent("torch", isDirectory: true)

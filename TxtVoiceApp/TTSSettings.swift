@@ -136,7 +136,7 @@ struct TTSSettings: Codable, Equatable {
         bundledPythonCommandPath ?? localPythonCommandPath
     }
     static var kokoroCondaArgumentsTemplate: String {
-        "\(bundledOrRepositoryScriptPath("local_tts_kokoro.py")) --input {input} --output {output} --voice {voice} --speed {speed}"
+        "\(shellQuoted(kokoroScriptPath)) --input {input} --output {output} --voice {voice} --speed {speed}"
     }
     static let kokoroOutputExtension = "wav"
 
@@ -161,6 +161,10 @@ struct TTSSettings: Codable, Equatable {
         return python.path
     }
 
+    static var kokoroScriptPath: String {
+        bundledOrRepositoryScriptPath("local_tts_kokoro.py")
+    }
+
     private static func bundledOrRepositoryScriptPath(_ fileName: String) -> String {
         if let root = bundledLocalTTSRoot {
             let bundledScript = root.appendingPathComponent("scripts/\(fileName)")
@@ -169,6 +173,10 @@ struct TTSSettings: Codable, Equatable {
             }
         }
         return "\(repositoryRootPath)/scripts/\(fileName)"
+    }
+
+    private static func shellQuoted(_ value: String) -> String {
+        "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
     }
 
     var engine: TTSEngineChoice = .iosSystem
@@ -260,6 +268,15 @@ final class TTSSettingsStore: ObservableObject {
             var shouldSaveMigratedSettings = false
             if decoded.localTTSArgumentsTemplate?.contains("{voice}") == false,
                decoded.localTTSArgumentsTemplate?.contains("local_tts_kokoro.py") == true {
+                decoded.localTTSArgumentsTemplate = TTSSettings.kokoroCondaArgumentsTemplate
+                shouldSaveMigratedSettings = true
+            }
+            if decoded.localTTSCommandPath?.contains("txtvoice-tts") == true {
+                decoded.localTTSCommandPath = TTSSettings.kokoroCondaCommandPath
+                shouldSaveMigratedSettings = true
+            }
+            if decoded.localTTSArgumentsTemplate?.contains("local_tts_kokoro.py") == true,
+               decoded.localTTSArgumentsTemplate?.hasPrefix("\"") == false {
                 decoded.localTTSArgumentsTemplate = TTSSettings.kokoroCondaArgumentsTemplate
                 shouldSaveMigratedSettings = true
             }

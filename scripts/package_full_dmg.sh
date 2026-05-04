@@ -13,12 +13,33 @@ HF_CACHE_ROOT="${HF_CACHE_ROOT:-$HOME/.cache/huggingface}"
 DIST_DIR="$ROOT_DIR/dist"
 BUILD_ROOT="$ROOT_DIR/build/full-dmg"
 LOCAL_TTS_ROOT_NAME="LocalTTS"
+KOKORO_REQUIRED_VOICES=(
+  zf_xiaoxiao
+  zm_yunxi
+  zm_yunjian
+  zf_xiaobei
+)
 
 if [[ ! -x "$CONDA_ENV_PATH/bin/python" ]]; then
   echo "Missing bundled TTS Python env: $CONDA_ENV_PATH" >&2
   echo "Set TXTVOICE_TTS_ENV to a prepared env containing kokoro." >&2
   exit 1
 fi
+
+echo "Warming Kokoro model cache for bundled voices..."
+VOICE_WARM_INPUT="$(mktemp /tmp/txtnovelreader-kokoro-warm.XXXXXX.txt)"
+VOICE_WARM_OUTPUT="$(mktemp /tmp/txtnovelreader-kokoro-warm.XXXXXX.wav)"
+printf "你好，这是 txtnovelreader 本地音色缓存准备。" > "$VOICE_WARM_INPUT"
+for voice in "${KOKORO_REQUIRED_VOICES[@]}"; do
+  echo "  - $voice"
+  "$CONDA_ENV_PATH/bin/python" \
+    "$ROOT_DIR/scripts/local_tts_kokoro.py" \
+    --input "$VOICE_WARM_INPUT" \
+    --output "$VOICE_WARM_OUTPUT" \
+    --voice "$voice" \
+    --speed 1.0
+done
+rm -f "$VOICE_WARM_INPUT" "$VOICE_WARM_OUTPUT"
 
 echo "Building Release app..."
 xcodebuild \
@@ -60,7 +81,18 @@ if [[ -d "$HF_CACHE_ROOT/hub/models--hexgrad--Kokoro-82M" ]]; then
   mkdir -p "$LOCAL_TTS_ROOT/huggingface/hub"
   ditto "$HF_CACHE_ROOT/hub/models--hexgrad--Kokoro-82M" \
     "$LOCAL_TTS_ROOT/huggingface/hub/models--hexgrad--Kokoro-82M"
+else
+  echo "Missing Kokoro Hugging Face cache: $HF_CACHE_ROOT/hub/models--hexgrad--Kokoro-82M" >&2
+  exit 1
 fi
+
+KOKORO_SNAPSHOT_ROOT="$LOCAL_TTS_ROOT/huggingface/hub/models--hexgrad--Kokoro-82M/snapshots"
+for voice in "${KOKORO_REQUIRED_VOICES[@]}"; do
+  if ! find "$KOKORO_SNAPSHOT_ROOT" \( -path "*/voices/$voice.pt" -type f -o -path "*/voices/$voice.pt" -type l \) | grep -q .; then
+    echo "Missing bundled Kokoro voice: $voice" >&2
+    exit 1
+  fi
+done
 
 cat > "$LOCAL_TTS_ROOT/README.txt" <<'EOF'
 txtnovelreader bundled local TTS runtime

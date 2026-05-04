@@ -43,12 +43,14 @@ jobs:
         run: |
           set -euo pipefail
           printf "你好，这是 txtnovelreader Kokoro 模型缓存准备。" > /tmp/txtnovelreader-kokoro-cache.txt
-          "$HOME/miniforge/envs/txtnovelreader-kokoro/bin/python" \
-            scripts/local_tts_kokoro.py \
-            --input /tmp/txtnovelreader-kokoro-cache.txt \
-            --output /tmp/txtnovelreader-kokoro-cache.wav \
-            --voice zf_xiaoxiao \
-            --speed 1.0
+          for voice in zf_xiaoxiao zm_yunxi zm_yunjian zf_xiaobei; do
+            "$HOME/miniforge/envs/txtnovelreader-kokoro/bin/python" \
+              scripts/local_tts_kokoro.py \
+              --input /tmp/txtnovelreader-kokoro-cache.txt \
+              --output "/tmp/txtnovelreader-kokoro-cache-$voice.wav" \
+              --voice "$voice" \
+              --speed 1.0
+          done
 
       - name: Create full DMG
         if: ${{ inputs.package_mode == 'full' }}
