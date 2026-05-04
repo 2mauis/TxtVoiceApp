@@ -18,11 +18,19 @@ jobs:
     runs-on: macos-latest
     env:
       KOKORO_ENV_NAME: txtnovelreader-kokoro
-      MINIFORGE_HOME: ${{ runner.temp }}/miniforge
-      TXTVOICE_TTS_ENV: ${{ runner.temp }}/miniforge/envs/txtnovelreader-kokoro
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure full package paths
+        if: ${{ inputs.package_mode == 'full' }}
+        run: |
+          set -euo pipefail
+          miniforge_home="$RUNNER_TEMP/miniforge"
+          {
+            echo "MINIFORGE_HOME=$miniforge_home"
+            echo "TXTVOICE_TTS_ENV=$miniforge_home/envs/$KOKORO_ENV_NAME"
+          } >> "$GITHUB_ENV"
 
       - name: Show build environment
         run: |
