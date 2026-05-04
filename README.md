@@ -44,10 +44,21 @@ txtnovelreader does not use Ollama or Gemma as TTS engines. Those tools generate
 text, not audio. The maintained local speech engines are:
 
 - macOS system speech: stable, small, and available immediately.
-- Kokoro local TTS: lightweight neural speech backend.
+- [Kokoro](https://github.com/hexgrad/kokoro): lightweight neural speech
+  backend.
 
 The full package includes the local backend runtime so users do not need to
 manually create a conda environment.
+
+## Acknowledgements
+
+txtnovelreader's bundled local neural TTS support is built on
+[Kokoro](https://github.com/hexgrad/kokoro). Thank you to the Kokoro authors and
+contributors for making a small, practical open-source speech model available to
+the community.
+
+Kokoro and its model files are third-party open-source components. Please refer
+to the upstream project for its license, model terms, and attribution details.
 
 ## Build
 
