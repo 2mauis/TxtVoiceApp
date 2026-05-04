@@ -34,73 +34,111 @@ enum TextChunker {
             }
         }
 
-        let startIndex = String.Index(utf16Offset: safeOffset, in: text)
-        let endIndex = String.Index(utf16Offset: safeEndOffset, in: text)
-        let selectedText = String(text[startIndex..<endIndex])
-        let paragraphs = selectedText.components(separatedBy: .newlines)
-        var chunks: [SpeechChunk] = []
-        var buffer = ""
-        var bufferStart = safeOffset
-        var cursor = safeOffset
+        return chunksInRawRange(
+            text,
+            startingAt: safeOffset,
+            endingAt: safeEndOffset,
+            maxLength: maxLength
+        )
+    }
 
-        func flush(upTo endOffset: Int) {
-            let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                buffer = ""
-                bufferStart = endOffset
+    private static func chunksInRawRange(
+        _ text: String,
+        startingAt safeOffset: Int,
+        endingAt safeEndOffset: Int,
+        maxLength: Int
+    ) -> [SpeechChunk] {
+        var chunks: [SpeechChunk] = []
+
+        var segmentStartIndex = String.Index(utf16Offset: safeOffset, in: text)
+        let endIndex = String.Index(utf16Offset: safeEndOffset, in: text)
+        var cursorIndex = segmentStartIndex
+        var segmentStartOffset = safeOffset
+        var cursorOffset = safeOffset
+        var lastSoftBreakIndex: String.Index?
+        var lastSoftBreakOffset: Int?
+
+        func appendSegment(upTo segmentEndIndex: String.Index, endOffset: Int) {
+            guard segmentStartIndex < segmentEndIndex else {
+                segmentStartIndex = segmentEndIndex
+                segmentStartOffset = endOffset
                 return
             }
 
-            let leadingTrim = buffer.utf16.count - buffer.trimmingCharacters(in: .whitespaces).utf16.count
+            let raw = String(text[segmentStartIndex..<segmentEndIndex])
+            let leadingTrim = raw.leadingTrimUTF16Count
+            let trailingTrim = raw.trailingTrimUTF16Count
+            let textStartOffset = min(endOffset, segmentStartOffset + leadingTrim)
+            let textEndOffset = max(textStartOffset, endOffset - trailingTrim)
+            guard textStartOffset < textEndOffset else {
+                segmentStartIndex = segmentEndIndex
+                segmentStartOffset = endOffset
+                return
+            }
+
+            let textStartIndex = String.Index(utf16Offset: textStartOffset, in: text)
+            let textEndIndex = String.Index(utf16Offset: textEndOffset, in: text)
             chunks.append(SpeechChunk(
-                text: trimmed,
-                startOffset: bufferStart + max(0, leadingTrim),
-                endOffset: endOffset
+                text: String(text[textStartIndex..<textEndIndex]),
+                startOffset: textStartOffset,
+                endOffset: textEndOffset
             ))
-            buffer = ""
-            bufferStart = endOffset
+            segmentStartIndex = segmentEndIndex
+            segmentStartOffset = endOffset
+            lastSoftBreakIndex = nil
+            lastSoftBreakOffset = nil
         }
 
-        for paragraph in paragraphs {
-            let candidate = paragraph + "\n"
-            if buffer.isEmpty {
-                bufferStart = cursor
+        while cursorIndex < endIndex {
+            let character = text[cursorIndex]
+            let characterLength = String(character).utf16.count
+            text.formIndex(after: &cursorIndex)
+            cursorOffset += characterLength
+
+            if character.isChunkBoundary {
+                lastSoftBreakIndex = cursorIndex
+                lastSoftBreakOffset = cursorOffset
             }
 
-            if candidate.count > maxLength {
-                flush(upTo: cursor)
-                splitLong(candidate, startOffset: cursor, maxLength: maxLength).forEach { chunks.append($0) }
-            } else if buffer.count + candidate.count > maxLength {
-                flush(upTo: cursor)
-                bufferStart = cursor
-                buffer = candidate
+            let segmentLength = cursorOffset - segmentStartOffset
+            guard segmentLength >= maxLength else { continue }
+
+            if let breakIndex = lastSoftBreakIndex,
+               let breakOffset = lastSoftBreakOffset,
+               breakOffset > segmentStartOffset {
+                appendSegment(upTo: breakIndex, endOffset: breakOffset)
             } else {
-                buffer += candidate
+                appendSegment(upTo: cursorIndex, endOffset: cursorOffset)
             }
-
-            cursor += candidate.utf16.count
         }
 
-        flush(upTo: safeEndOffset)
+        appendSegment(upTo: endIndex, endOffset: safeEndOffset)
         return chunks
     }
+}
 
-    private static func splitLong(_ text: String, startOffset: Int, maxLength: Int) -> [SpeechChunk] {
-        var result: [SpeechChunk] = []
-        var cursor = text.startIndex
-        var offset = startOffset
-
-        while cursor < text.endIndex {
-            let end = text.index(cursor, offsetBy: maxLength, limitedBy: text.endIndex) ?? text.endIndex
-            let raw = String(text[cursor..<end])
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                result.append(SpeechChunk(text: trimmed, startOffset: offset, endOffset: offset + raw.utf16.count))
-            }
-            offset += raw.utf16.count
-            cursor = end
+private extension String {
+    var leadingTrimUTF16Count: Int {
+        var count = 0
+        for character in self {
+            guard character.isWhitespace || character.isNewline else { break }
+            count += String(character).utf16.count
         }
+        return count
+    }
 
-        return result
+    var trailingTrimUTF16Count: Int {
+        var count = 0
+        for character in reversed() {
+            guard character.isWhitespace || character.isNewline else { break }
+            count += String(character).utf16.count
+        }
+        return count
+    }
+}
+
+private extension Character {
+    var isChunkBoundary: Bool {
+        isNewline || "，,、。！？!?；;：:…".contains(self)
     }
 }

@@ -8,6 +8,7 @@ actor ANETTSCoreMLClient {
     static let shared = ANETTSCoreMLClient()
 
     private var model: KokoroTTSModel?
+    private var isLoadingModel = false
 
     func synthesize(text: String, settings: TTSSettings) async throws -> Data {
         let outputDirectory = FileManager.default.temporaryDirectory
@@ -82,8 +83,17 @@ actor ANETTSCoreMLClient {
             return model
         }
 
+        while isLoadingModel {
+            try await Task.sleep(for: .milliseconds(100))
+            if let model {
+                return model
+            }
+        }
+
         AppLogger.info("ane TTS loading Kokoro CoreML model computeUnits=all", category: "ane-tts")
         let startedAt = Date()
+        isLoadingModel = true
+        defer { isLoadingModel = false }
         let loaded = try await KokoroTTSModel.fromPretrained(computeUnits: .all)
         model = loaded
         AppLogger.info(

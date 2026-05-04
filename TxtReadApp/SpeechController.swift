@@ -111,7 +111,6 @@ final class SpeechController: NSObject, ObservableObject {
     private var audioSessionDirectory: URL?
     private var audioPlayer: AVAudioPlayer?
     private var activeAudioPlayerID: ObjectIdentifier?
-    private var audioProgressTask: Task<Void, Never>?
     private var audioContinuation: CheckedContinuation<Void, Error>?
     private var speechContinuation: CheckedContinuation<Void, Error>?
     private var systemUtteranceOffsets: [ObjectIdentifier: Int] = [:]
@@ -132,18 +131,20 @@ final class SpeechController: NSObject, ObservableObject {
         stop()
         let sessionID = UUID()
         playbackSessionID = sessionID
+        let maxChunkLength = Self.maxChunkLength(for: settings.engine)
         chunks = TextChunker.chunks(
             from: text,
             startingAt: offset,
             endingAt: endOffset,
+            maxLength: maxChunkLength,
             boundaryOffsets: boundaryOffsets
         )
         currentChunkIndex = 0
         currentOffset = offset
-        currentSnippet = chunks.first?.text ?? ""
+        currentSnippet = settings.engine == .iosSystem ? (chunks.first?.text ?? "") : ""
         lastCompletion = nil
         AppLogger.info(
-            "speak start offset=\(offset) end=\(endOffset.map(String.init) ?? "book-end") boundaries=\(boundaryOffsets.count) chunks=\(chunks.count) engine=\(settings.activeEngineSummary)",
+            "speak start offset=\(offset) end=\(endOffset.map(String.init) ?? "book-end") boundaries=\(boundaryOffsets.count) chunks=\(chunks.count) maxChunkLength=\(maxChunkLength) engine=\(settings.activeEngineSummary)",
             category: "speech"
         )
 
@@ -216,6 +217,15 @@ final class SpeechController: NSObject, ObservableObject {
         }
     }
 
+    private static func maxChunkLength(for engine: TTSEngineChoice) -> Int {
+        switch engine {
+        case .aneKokoro:
+            return 36
+        case .iosSystem, .localKokoro:
+            return 900
+        }
+    }
+
     private func runRemoteSpeech(settings: TTSSettings, sessionID: UUID) async {
         let prefetchDepth = 5
         let initialBufferCount = min(2, chunks.count)
@@ -255,9 +265,6 @@ final class SpeechController: NSObject, ObservableObject {
             for (index, chunk) in chunks.enumerated() {
                 try Task.checkCancellation()
                 guard playbackSessionID == sessionID else { return }
-                currentChunkIndex = index
-                currentOffset = chunk.startOffset
-                currentSnippet = chunk.text
                 state = .preparing
                 AppLogger.info(
                     "remote chunk index=\(index) start=\(chunk.startOffset) length=\(chunk.text.count) engine=\(settings.activeEngineSummary)",
@@ -271,12 +278,10 @@ final class SpeechController: NSObject, ObservableObject {
                 try Task.checkCancellation()
                 guard playbackSessionID == sessionID else { return }
                 schedulePrefetch(index + prefetchDepth)
-                state = .speaking
                 try await playAudio(asset)
-                stopAudioProgressTracking()
                 try? FileManager.default.removeItem(at: asset.fileURL)
                 guard playbackSessionID == sessionID else { return }
-                currentOffset = chunk.endOffset
+                currentOffset = max(currentOffset, chunk.endOffset)
             }
             cancelAudioPrefetchTasks()
             removeAudioSessionDirectory()
@@ -339,9 +344,12 @@ final class SpeechController: NSObject, ObservableObject {
                     continuation.resume(throwing: ReaderError.invalidResponse("音频播放启动失败。"))
                     return
                 }
-                startAudioProgressTracking(player: player, playerID: ObjectIdentifier(player), chunk: asset.chunk)
+                currentChunkIndex = asset.index
+                currentOffset = asset.chunk.startOffset
+                currentSnippet = asset.chunk.text
+                state = .speaking
                 AppLogger.info(
-                    "audio play index=\(asset.index) start=\(asset.chunk.startOffset) file=\(asset.fileURL.lastPathComponent)",
+                    "audio play index=\(asset.index) start=\(asset.chunk.startOffset) end=\(asset.chunk.endOffset) length=\(asset.chunk.text.count) duration=\(String(format: "%.3f", player.duration)) text=\"\(asset.chunk.text.logPreview)\" file=\(asset.fileURL.lastPathComponent)",
                     category: "speech"
                 )
             } catch {
@@ -359,39 +367,8 @@ final class SpeechController: NSObject, ObservableObject {
         audioPlayer?.delegate = nil
         audioPlayer = nil
         activeAudioPlayerID = nil
-        stopAudioProgressTracking()
         audioContinuation?.resume(throwing: CancellationError())
         audioContinuation = nil
-    }
-
-    private func startAudioProgressTracking(player: AVAudioPlayer, playerID: ObjectIdentifier, chunk: SpeechChunk) {
-        stopAudioProgressTracking()
-        let sessionID = playbackSessionID
-        audioProgressTask = Task { [weak self, weak player] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(180))
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let self,
-                          self.playbackSessionID == sessionID,
-                          self.activeAudioPlayerID == playerID,
-                          let player,
-                          player.duration > 0,
-                          player.isPlaying else { return }
-                    let progress = min(0.98, max(0, player.currentTime / player.duration))
-                    let span = max(0, chunk.endOffset - chunk.startOffset)
-                    let estimatedOffset = chunk.startOffset + Int(Double(span) * progress)
-                    if estimatedOffset > self.currentOffset {
-                        self.currentOffset = estimatedOffset
-                    }
-                }
-            }
-        }
-    }
-
-    private func stopAudioProgressTracking() {
-        audioProgressTask?.cancel()
-        audioProgressTask = nil
     }
 
     private func removeAudioSessionDirectory() {
@@ -469,7 +446,6 @@ extension SpeechController: AVAudioPlayerDelegate {
         let playerID = ObjectIdentifier(player)
         Task { @MainActor in
             guard self.activeAudioPlayerID == playerID else { return }
-            self.stopAudioProgressTracking()
             self.audioPlayer?.delegate = nil
             self.audioPlayer = nil
             self.activeAudioPlayerID = nil
@@ -486,12 +462,20 @@ extension SpeechController: AVAudioPlayerDelegate {
         let playerID = ObjectIdentifier(player)
         Task { @MainActor in
             guard self.activeAudioPlayerID == playerID else { return }
-            self.stopAudioProgressTracking()
             self.audioPlayer?.delegate = nil
             self.audioPlayer = nil
             self.activeAudioPlayerID = nil
             self.audioContinuation?.resume(throwing: error ?? ReaderError.invalidResponse("音频解码失败。"))
             self.audioContinuation = nil
         }
+    }
+}
+
+private extension String {
+    var logPreview: String {
+        let collapsed = replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+        let prefix = collapsed.prefix(42)
+        return String(prefix).replacingOccurrences(of: "\"", with: "'")
     }
 }
