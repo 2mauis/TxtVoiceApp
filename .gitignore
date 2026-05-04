@@ -1,0 +1,22 @@
+DerivedData/
+build/
+dist/
+Pods/
+*.xcuserstate
+xcuserdata/
+__pycache__/
+.venv-tts/
+.venv-tts311/
+.DS_Store
+*.pyc
+tasks/
+
+# Local model caches and generated Core ML assets are large and machine-specific.
+vendor/kokoro-coreml/.git/
+vendor/kokoro-coreml/.cache/
+vendor/kokoro-coreml/coreml/
+vendor/kokoro-coreml/coreml_fp32/
+vendor/kokoro-coreml/KokoroVocoder.mlpackage/
+vendor/kokoro-coreml/kokoro.js/voices/*.bin
+vendor/kokoro-coreml/outputs/
+vendor/kokoro-coreml/swift/.build/

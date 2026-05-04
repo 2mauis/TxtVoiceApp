@@ -1,0 +1,112 @@
+name: Manual Build DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_mode:
+        description: "Build app-only or full package with local TTS runtime"
+        required: true
+        default: "app-only"
+        type: choice
+        options:
+          - app-only
+          - full
+
+jobs:
+  build-dmg:
+    name: Build macOS DMG
+    runs-on: macos-latest
+    env:
+      KOKORO_ENV_NAME: txtnovelreader-kokoro
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure full package paths
+        if: ${{ inputs.package_mode == 'full' }}
+        run: |
+          set -euo pipefail
+          miniforge_home="$RUNNER_TEMP/miniforge"
+          {
+            echo "MINIFORGE_HOME=$miniforge_home"
+            echo "TXTREAD_TTS_ENV=$miniforge_home/envs/$KOKORO_ENV_NAME"
+          } >> "$GITHUB_ENV"
+
+      - name: Show build environment
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Install Miniforge for full package
+        if: ${{ inputs.package_mode == 'full' }}
+        run: |
+          set -euo pipefail
+          curl -L -o "$RUNNER_TEMP/miniforge.sh" \
+            https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh
+          rm -rf "$MINIFORGE_HOME"
+          bash "$RUNNER_TEMP/miniforge.sh" -b -p "$MINIFORGE_HOME"
+          "$MINIFORGE_HOME/bin/conda" create -n "$KOKORO_ENV_NAME" -c conda-forge --override-channels python=3.11 pip -y
+          "$MINIFORGE_HOME/bin/conda" run -n "$KOKORO_ENV_NAME" python -m ensurepip --upgrade
+          "$TXTREAD_TTS_ENV/bin/python" -m pip --version
+          "$TXTREAD_TTS_ENV/bin/python" -m pip install \
+            "kokoro>=0.9.4" soundfile "misaki[zh]>=0.9.4"
+
+      - name: Verify full package runtime
+        if: ${{ inputs.package_mode == 'full' }}
+        run: |
+          set -euo pipefail
+          test -x "$TXTREAD_TTS_ENV/bin/python"
+          "$TXTREAD_TTS_ENV/bin/python" - <<'PY'
+          import kokoro
+          import soundfile
+          print("kokoro runtime ok")
+          PY
+
+      - name: Create full DMG
+        if: ${{ inputs.package_mode == 'full' }}
+        run: |
+          set -euo pipefail
+          scripts/package_full_dmg.sh
+          dmg_path="$(ls -t dist/txtreadapp-full-*.dmg | head -n 1)"
+          echo "DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
+
+      - name: Build release app
+        if: ${{ inputs.package_mode == 'app-only' }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project TxtReadApp.xcodeproj \
+            -scheme TxtReadApp \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            build
+
+      - name: Create DMG
+        if: ${{ inputs.package_mode == 'app-only' }}
+        run: |
+          set -euo pipefail
+          app_path="build/DerivedData/Build/Products/Release/txtreadapp.app"
+          test -d "$app_path"
+
+          rm -rf build/dmg-root dist
+          mkdir -p build/dmg-root dist
+          ditto "$app_path" build/dmg-root/txtreadapp.app
+          ln -s /Applications build/dmg-root/Applications
+
+          short_sha="${GITHUB_SHA::7}"
+          dmg_path="dist/txtreadapp-${short_sha}.dmg"
+          hdiutil create \
+            -volname TxtReadApp \
+            -srcfolder build/dmg-root \
+            -ov \
+            -format UDZO \
+            "$dmg_path"
+
+          echo "DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: txtreadapp-dmg
+          path: ${{ env.DMG_PATH }}
+          if-no-files-found: error
