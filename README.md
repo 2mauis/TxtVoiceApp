@@ -1,122 +1,88 @@
 # txtnovelreader
 
-A SwiftUI macOS app for importing local .txt novels and reading them aloud.
+A macOS TXT novel reader with built-in reading state, chapter navigation, and
+text-to-speech playback.
 
----
-
-After finishing the anime *Eternal Life* on Bilibili, I felt bored. I didn’t want to read a novel, just listen to one. I also didn’t want to go through the trouble of setting up TTS on my phone, so I urged Codex to write it for me.
-
+After finishing the anime *Eternal Life* on Bilibili, I felt bored. I did not
+want to read a novel, just listen to one, so I asked Codex to build this app.
 This is also for fellow novel readers and anime fans.
 
----
+追毕永生之剧于 B 站，忽觉寂寞。不欲读书，惟欲听之，遂令 Codex 作此
+应用。此亦献给书友与剧友。
 
-追毕永生之剧于B站，感到寂寞，不欲读书，惟欲听之。又不欲自行折腾手机之语音合成，遂督促Codex为我所作。此亦献给书友与剧友。
+## Features
 
-## Current Scope
-
-- Import TXT files from the Mac file picker.
+- Import local `.txt` novels from Finder.
 - Decode UTF-8, UTF-16, GB18030/GBK, and Big5 text.
-- Persist imported books in the app sandbox.
 - Detect common Chinese and English chapter headings.
-- Read selected chapters with playback controls, previous/next chapter navigation,
-  and saved reading state.
-- Generate and cache chapter audio in the background to reduce playback stalls.
-- Default to macOS system speech for zero setup local playback.
-- Optional local/offline TTS through command adapters:
-  - Kokoro for lighter local speech generation.
-  - Chatterbox for heavier multilingual voice generation.
-- Voice presets for female, male, deeper male, mature female, and custom voices
-  where the selected backend supports them.
+- Persist imported books, the last open reading window, and reading progress.
+- Read continuously across chapter boundaries.
+- Keep the reading window synced with playback.
+- Jump to previous or next chapter.
+- Return to the current playback position.
+- Start playback from the current reading position.
+- Use macOS system voices with no setup.
+- Use bundled local Kokoro TTS in the full DMG build.
+- Adjust voice preset, speech speed, and supported backend style controls.
+
+## Packages
+
+There are two package modes:
+
+- `app-only`: small package. It includes the app and supports macOS system
+  voices. Local neural TTS requires an external runtime.
+- `full`: larger package. It bundles the Python runtime, Kokoro adapter script,
+  and cached local TTS model files under
+  `txtnovelreader.app/Contents/Resources/LocalTTS`.
+
+The app always prefers the bundled `LocalTTS` runtime when present. This is the
+intended direction for release builds.
+
+## Local TTS
+
+txtnovelreader does not use Ollama or Gemma as TTS engines. Those tools generate
+text, not audio. The maintained local speech engines are:
+
+- macOS system speech: stable, small, and available immediately.
+- Kokoro local TTS: lightweight neural speech backend.
+
+The full package includes the local backend runtime so users do not need to
+manually create a conda environment.
+
+## Build
+
+Build a normal Release app:
+
+```sh
+xcodebuild -project TxtVoiceApp.xcodeproj -scheme TxtVoiceApp -configuration Release -derivedDataPath /tmp/TxtVoiceMacDerivedDataRelease build
+```
+
+Build a full DMG with bundled local TTS runtime:
+
+```sh
+scripts/package_full_dmg.sh
+```
+
+The full packager expects a prepared local TTS environment at:
+
+```text
+/opt/homebrew/Caskroom/miniforge/base/envs/txtnovelreader-kokoro
+```
+
+Set `TXTVOICE_TTS_ENV` to override that path.
+
+## GitHub Actions
+
+The repository includes a manually triggered workflow:
+
+```text
+Actions -> Manual Build DMG -> Run workflow
+```
+
+Choose `app-only` for a small system-voice build, or `full` to build a larger
+DMG that installs and bundles the local TTS runtime in CI.
 
 ## License
 
 txtnovelreader is licensed under the Apache License, Version 2.0. See
 [`LICENSE`](LICENSE).
-
-## Local TTS Commands
-
-The app intentionally does not use Ollama/Gemma as TTS engines. They generate
-text, not audio. Local neural speech is integrated through dedicated local
-backend commands. The app passes one chapter chunk at a time to the backend and
-plays the generated audio after it is written to disk.
-
-The command contract is:
-
-```text
---input {input} --output {output}
-```
-
-txtnovelreader writes UTF-8 text to `{input}` and plays the audio file written to
-`{output}`. The app also supports placeholders such as `{voice}`, `{speed}`,
-`{chatterboxVoice}`, `{exaggeration}`, and `{cfgWeight}` in the argument
-template.
-
-### Kokoro
-
-Create the conda environment:
-
-```sh
-conda create -n txtvoice-tts -c conda-forge --override-channels python=3.11 -y
-conda run -n txtvoice-tts python -m pip install "kokoro>=0.9.4" soundfile "misaki[zh]>=0.9.4"
-```
-
-App settings:
-
-```text
-引擎: Kokoro 本地 TTS
-命令: /opt/homebrew/Caskroom/miniforge/base/envs/txtvoice-tts/bin/python
-参数模板: /path/to/txtnovelreader/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}
-```
-
-Kokoro is lighter and useful for validating the offline pipeline. Judge Chinese
-novel narration quality by listening tests before making it the only option.
-
-### Chatterbox
-
-Install inside the same conda environment if you want to compare a heavier
-multilingual model:
-
-```sh
-conda run -n txtvoice-tts python -m pip install chatterbox-tts
-```
-
-App settings:
-
-```text
-引擎: Chatterbox 本地 TTS
-命令: /opt/homebrew/Caskroom/miniforge/base/envs/txtvoice-tts/bin/python
-参数模板: /path/to/txtnovelreader/scripts/local_tts_chatterbox.py --input {input} --output {output} --model multilingual --language zh --voice {chatterboxVoice} --exaggeration {exaggeration} --cfg-weight {cfgWeight}
-```
-
-Chinese/multilingual defaults are built into the adapter:
-
-```sh
-conda run -n txtvoice-tts python scripts/local_tts_chatterbox.py --input input.txt --output output.wav --model multilingual --language zh
-```
-
-## Removed Paths
-
-Earlier experiments with app-bundled language models and local text-generation
-engines were removed from the app surface. They were not reliable speech
-engines for this project. The maintained paths are now macOS system speech,
-Kokoro local command, and Chatterbox local command.
-
-## Build And Run
-
-Command-line build:
-
-```sh
-xcodebuild -project TxtVoiceApp.xcodeproj -scheme TxtVoiceApp -sdk macosx -configuration Debug -derivedDataPath /private/tmp/TxtVoiceMacDerivedData build
-```
-
-Run:
-
-```sh
-open /private/tmp/TxtVoiceMacDerivedData/Build/Products/Debug/txtnovelreader.app
-```
-
-Verified app artifact:
-
-```text
-/private/tmp/TxtVoiceMacDerivedData/Build/Products/Debug/txtnovelreader.app
-```

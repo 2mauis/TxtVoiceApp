@@ -12,11 +12,28 @@ enum TextChunker {
         from text: String,
         startingAt offset: Int = 0,
         endingAt endOffset: Int? = nil,
-        maxLength: Int = 900
+        maxLength: Int = 900,
+        boundaryOffsets: [Int] = []
     ) -> [SpeechChunk] {
         let textLength = text.utf16.count
         let safeOffset = max(0, min(offset, textLength))
         let safeEndOffset = max(safeOffset, min(endOffset ?? textLength, textLength))
+
+        let safeBoundaries = Array(Set(boundaryOffsets))
+            .filter { $0 > safeOffset && $0 < safeEndOffset }
+            .sorted()
+        if !safeBoundaries.isEmpty {
+            let segmentOffsets = [safeOffset] + safeBoundaries + [safeEndOffset]
+            return zip(segmentOffsets, segmentOffsets.dropFirst()).flatMap { segmentStart, segmentEnd in
+                Self.chunks(
+                    from: text,
+                    startingAt: segmentStart,
+                    endingAt: segmentEnd,
+                    maxLength: maxLength
+                )
+            }
+        }
+
         let startIndex = String.Index(utf16Offset: safeOffset, in: text)
         let endIndex = String.Index(utf16Offset: safeEndOffset, in: text)
         let selectedText = String(text[startIndex..<endIndex])

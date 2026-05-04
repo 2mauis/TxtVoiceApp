@@ -59,9 +59,6 @@ struct SettingsView: View {
 
                     case .localKokoro:
                         kokoroSection
-
-                    case .localChatterbox:
-                        chatterboxSection
                     }
 
                     diagnosticsSection
@@ -119,80 +116,6 @@ struct SettingsView: View {
                         .lineLimit(3)
                 }
             }
-        }
-    }
-
-    private var chatterboxSection: some View {
-        SettingsSection(title: "Chatterbox 本地 TTS") {
-            SettingsRow("音色") {
-                Picker("", selection: $store.settings.chatterboxVoicePreset) {
-                    ForEach(ChatterboxVoicePreset.allCases) { preset in
-                        Text(preset.label).tag(preset)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 420, alignment: .leading)
-                .onChange(of: store.settings.chatterboxVoicePreset) { _, preset in
-                    applyChatterboxPreset(preset)
-                }
-            }
-
-            if store.settings.chatterboxVoicePreset == .custom {
-                SettingsRow("参考音频") {
-                    HStack(spacing: 10) {
-                        TextField("可选：用于声音克隆的 wav 文件路径", text: $store.settings.chatterboxVoicePath)
-                            .textFieldStyle(.roundedBorder)
-
-                        Button {
-                            chooseChatterboxVoiceFile()
-                        } label: {
-                            Label("选择", systemImage: "waveform")
-                        }
-                    }
-                }
-            }
-
-            SettingsRow("表现强度") {
-                HStack(spacing: 10) {
-                    Slider(value: $store.settings.chatterboxExaggeration, in: 0.25...0.90)
-                    Text(String(format: "%.2f", store.settings.chatterboxExaggeration))
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 46, alignment: .trailing)
-                }
-            }
-
-            SettingsRow("CFG") {
-                HStack(spacing: 10) {
-                    Slider(value: $store.settings.chatterboxCFGWeight, in: 0.20...0.90)
-                    Text(String(format: "%.2f", store.settings.chatterboxCFGWeight))
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 46, alignment: .trailing)
-                }
-            }
-
-            SettingsRow("测试") {
-                localTTSTestButton
-            }
-
-            if !localTTSTestStatus.isEmpty {
-                SettingsRow("测试结果") {
-                    Text(localTTSTestStatus)
-                        .font(.callout)
-                        .foregroundStyle(localTTSTestStatus.hasPrefix("成功") ? .green : .secondary)
-                        .lineLimit(3)
-                }
-            }
-        }
-    }
-
-    private func applyChatterboxPreset(_ preset: ChatterboxVoicePreset) {
-        store.settings.chatterboxExaggeration = preset.defaultExaggeration
-        store.settings.chatterboxCFGWeight = preset.defaultCFGWeight
-        if preset != .custom {
-            store.settings.chatterboxVoicePath = ""
         }
     }
 
@@ -319,7 +242,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("TTS 设置")
                     .font(.title2.weight(.semibold))
-                Text("配置 macOS 系统语音、Kokoro 和 Chatterbox 本地 TTS。")
+                Text("配置 macOS 系统语音和 Kokoro 本地 TTS。")
                     .foregroundStyle(.secondary)
             }
 
@@ -399,16 +322,6 @@ struct SettingsView: View {
         }
 
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
-    }
-
-    private func chooseChatterboxVoiceFile() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.audio, .wav]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        if panel.runModal() == .OK, let url = panel.url {
-            store.settings.chatterboxVoicePath = url.path
-        }
     }
 
     private func testLocalTTSCommand() async {

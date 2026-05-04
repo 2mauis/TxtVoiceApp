@@ -111,8 +111,10 @@ final class SpeechController: NSObject, ObservableObject {
     private var audioSessionDirectory: URL?
     private var audioPlayer: AVAudioPlayer?
     private var activeAudioPlayerID: ObjectIdentifier?
+    private var audioProgressTask: Task<Void, Never>?
     private var audioContinuation: CheckedContinuation<Void, Error>?
     private var speechContinuation: CheckedContinuation<Void, Error>?
+    private var systemUtteranceOffsets: [ObjectIdentifier: Int] = [:]
     private var playbackSessionID = UUID()
 
     override init() {
@@ -120,17 +122,28 @@ final class SpeechController: NSObject, ObservableObject {
         synthesizer.delegate = self
     }
 
-    func speak(text: String, startingAt offset: Int, endingAt endOffset: Int? = nil, settings: TTSSettings) {
+    func speak(
+        text: String,
+        startingAt offset: Int,
+        endingAt endOffset: Int? = nil,
+        boundaryOffsets: [Int] = [],
+        settings: TTSSettings
+    ) {
         stop()
         let sessionID = UUID()
         playbackSessionID = sessionID
-        chunks = TextChunker.chunks(from: text, startingAt: offset, endingAt: endOffset)
+        chunks = TextChunker.chunks(
+            from: text,
+            startingAt: offset,
+            endingAt: endOffset,
+            boundaryOffsets: boundaryOffsets
+        )
         currentChunkIndex = 0
         currentOffset = offset
         currentSnippet = chunks.first?.text ?? ""
         lastCompletion = nil
         AppLogger.info(
-            "speak start offset=\(offset) end=\(endOffset.map(String.init) ?? "book-end") chunks=\(chunks.count) engine=\(settings.activeEngineSummary)",
+            "speak start offset=\(offset) end=\(endOffset.map(String.init) ?? "book-end") boundaries=\(boundaryOffsets.count) chunks=\(chunks.count) engine=\(settings.activeEngineSummary)",
             category: "speech"
         )
 
@@ -184,6 +197,7 @@ final class SpeechController: NSObject, ObservableObject {
         stopActiveAudioPlayer()
         speechContinuation?.resume(throwing: CancellationError())
         speechContinuation = nil
+        systemUtteranceOffsets.removeAll()
         removeAudioSessionDirectory()
         chunks = []
         currentChunkIndex = 0
@@ -197,13 +211,14 @@ final class SpeechController: NSObject, ObservableObject {
             utterance.rate = settings.systemRate
             utterance.pitchMultiplier = settings.systemPitch
             utterance.voice = SystemVoiceResolver.voice(for: settings)
+            systemUtteranceOffsets[ObjectIdentifier(utterance)] = chunk.startOffset
             synthesizer.speak(utterance)
         }
     }
 
     private func runRemoteSpeech(settings: TTSSettings, sessionID: UUID) async {
-        let prefetchDepth = settings.engine == .localChatterbox ? 2 : 3
-        let initialBufferCount = min(settings.engine == .localChatterbox ? 1 : 2, chunks.count)
+        let prefetchDepth = 5
+        let initialBufferCount = min(2, chunks.count)
         let sessionDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("txtnovelreader-playback-\(sessionID.uuidString)", isDirectory: true)
         audioSessionDirectory = sessionDirectory
@@ -258,6 +273,7 @@ final class SpeechController: NSObject, ObservableObject {
                 schedulePrefetch(index + prefetchDepth)
                 state = .speaking
                 try await playAudio(asset)
+                stopAudioProgressTracking()
                 try? FileManager.default.removeItem(at: asset.fileURL)
                 guard playbackSessionID == sessionID else { return }
                 currentOffset = chunk.endOffset
@@ -323,6 +339,7 @@ final class SpeechController: NSObject, ObservableObject {
                     continuation.resume(throwing: ReaderError.invalidResponse("音频播放启动失败。"))
                     return
                 }
+                startAudioProgressTracking(player: player, playerID: ObjectIdentifier(player), chunk: asset.chunk)
                 AppLogger.info(
                     "audio play index=\(asset.index) start=\(asset.chunk.startOffset) file=\(asset.fileURL.lastPathComponent)",
                     category: "speech"
@@ -342,8 +359,39 @@ final class SpeechController: NSObject, ObservableObject {
         audioPlayer?.delegate = nil
         audioPlayer = nil
         activeAudioPlayerID = nil
+        stopAudioProgressTracking()
         audioContinuation?.resume(throwing: CancellationError())
         audioContinuation = nil
+    }
+
+    private func startAudioProgressTracking(player: AVAudioPlayer, playerID: ObjectIdentifier, chunk: SpeechChunk) {
+        stopAudioProgressTracking()
+        let sessionID = playbackSessionID
+        audioProgressTask = Task { [weak self, weak player] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(180))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self,
+                          self.playbackSessionID == sessionID,
+                          self.activeAudioPlayerID == playerID,
+                          let player,
+                          player.duration > 0,
+                          player.isPlaying else { return }
+                    let progress = min(0.98, max(0, player.currentTime / player.duration))
+                    let span = max(0, chunk.endOffset - chunk.startOffset)
+                    let estimatedOffset = chunk.startOffset + Int(Double(span) * progress)
+                    if estimatedOffset > self.currentOffset {
+                        self.currentOffset = estimatedOffset
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopAudioProgressTracking() {
+        audioProgressTask?.cancel()
+        audioProgressTask = nil
     }
 
     private func removeAudioSessionDirectory() {
@@ -380,8 +428,22 @@ final class SpeechController: NSObject, ObservableObject {
 }
 
 extension SpeechController: AVSpeechSynthesizerDelegate {
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        willSpeakRangeOfSpeechString characterRange: NSRange,
+        utterance: AVSpeechUtterance
+    ) {
+        let utteranceID = ObjectIdentifier(utterance)
         Task { @MainActor in
+            guard let baseOffset = self.systemUtteranceOffsets[utteranceID] else { return }
+            self.currentOffset = baseOffset + characterRange.location
+        }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let utteranceID = ObjectIdentifier(utterance)
+        Task { @MainActor in
+            self.systemUtteranceOffsets.removeValue(forKey: utteranceID)
             if let continuation = self.speechContinuation {
                 continuation.resume()
                 self.speechContinuation = nil
@@ -392,7 +454,9 @@ extension SpeechController: AVSpeechSynthesizerDelegate {
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        let utteranceID = ObjectIdentifier(utterance)
         Task { @MainActor in
+            self.systemUtteranceOffsets.removeValue(forKey: utteranceID)
             self.speechContinuation?.resume(throwing: CancellationError())
             self.speechContinuation = nil
             self.state = .idle
@@ -405,6 +469,7 @@ extension SpeechController: AVAudioPlayerDelegate {
         let playerID = ObjectIdentifier(player)
         Task { @MainActor in
             guard self.activeAudioPlayerID == playerID else { return }
+            self.stopAudioProgressTracking()
             self.audioPlayer?.delegate = nil
             self.audioPlayer = nil
             self.activeAudioPlayerID = nil
@@ -421,6 +486,7 @@ extension SpeechController: AVAudioPlayerDelegate {
         let playerID = ObjectIdentifier(player)
         Task { @MainActor in
             guard self.activeAudioPlayerID == playerID else { return }
+            self.stopAudioProgressTracking()
             self.audioPlayer?.delegate = nil
             self.audioPlayer = nil
             self.activeAudioPlayerID = nil

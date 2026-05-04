@@ -7,6 +7,8 @@ struct ContentView: View {
     @State private var isImporting = false
     @State private var errorMessage: String?
     @State private var isShowingSettings = false
+    @State private var navigationPath: [ImportedBook] = []
+    @AppStorage("txtnovelreader.lastOpenBookID") private var lastOpenBookID = ""
 
     private var txtTypes: [UTType] {
         var types: [UTType] = [.plainText]
@@ -17,7 +19,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if library.books.isEmpty {
                     InitialLibraryView(
@@ -43,7 +45,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Txt Voice")
+            .navigationTitle("txtnovelreader")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 8) {
@@ -80,20 +82,44 @@ struct ContentView: View {
                 SettingsView()
                     .environmentObject(settings)
             }
+            .onAppear(perform: restoreReadingWindowIfNeeded)
+            .onChange(of: navigationPath) { _, path in
+                guard let book = path.last else { return }
+                lastOpenBookID = book.id.uuidString
+            }
+            .onChange(of: library.books) { _, _ in
+                restoreReadingWindowIfNeeded()
+            }
         }
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
-            _ = try library.importBook(from: url)
+            let book = try library.importBook(from: url)
+            navigationPath = [book]
+            lastOpenBookID = book.id.uuidString
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     private func delete(at offsets: IndexSet) {
-        offsets.map { library.books[$0] }.forEach { library.delete($0) }
+        let deletedBooks = offsets.map { library.books[$0] }
+        deletedBooks.forEach { library.delete($0) }
+        if let current = navigationPath.last, deletedBooks.contains(where: { $0.id == current.id }) {
+            navigationPath.removeAll()
+        }
+        if deletedBooks.contains(where: { $0.id.uuidString == lastOpenBookID }) {
+            lastOpenBookID = ""
+        }
+    }
+
+    private func restoreReadingWindowIfNeeded() {
+        guard navigationPath.isEmpty,
+              let id = UUID(uuidString: lastOpenBookID),
+              let book = library.book(id: id) else { return }
+        navigationPath = [book]
     }
 }
 
@@ -130,7 +156,7 @@ private struct InitialLibraryView: View {
                 ModelReadinessRow(
                     icon: "waveform",
                     title: "本地 TTS 命令",
-                    detail: "可选择 macOS 系统语音、Kokoro 或 Chatterbox，本地命令按章节后台生成音频。"
+                    detail: "可选择 macOS 系统语音或 Kokoro，本地语音按章节后台生成音频。"
                 )
 
                 ModelReadinessRow(

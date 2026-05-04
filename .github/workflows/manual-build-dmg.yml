@@ -1,0 +1,100 @@
+name: Manual Build DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_mode:
+        description: "Build app-only or full package with local TTS runtime"
+        required: true
+        default: "app-only"
+        type: choice
+        options:
+          - app-only
+          - full
+
+jobs:
+  build-dmg:
+    name: Build macOS DMG
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show build environment
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Install Miniforge for full package
+        if: ${{ inputs.package_mode == 'full' }}
+        run: |
+          set -euo pipefail
+          curl -L -o miniforge.sh \
+            https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh
+          bash miniforge.sh -b -p "$HOME/miniforge"
+          "$HOME/miniforge/bin/conda" create -n txtnovelreader-kokoro -c conda-forge --override-channels python=3.11 -y
+          "$HOME/miniforge/bin/conda" run -n txtnovelreader-kokoro python -m pip install \
+            "kokoro>=0.9.4" soundfile "misaki[zh]>=0.9.4"
+
+      - name: Warm Kokoro model cache
+        if: ${{ inputs.package_mode == 'full' }}
+        run: |
+          set -euo pipefail
+          printf "你好，这是 txtnovelreader Kokoro 模型缓存准备。" > /tmp/txtnovelreader-kokoro-cache.txt
+          "$HOME/miniforge/envs/txtnovelreader-kokoro/bin/python" \
+            scripts/local_tts_kokoro.py \
+            --input /tmp/txtnovelreader-kokoro-cache.txt \
+            --output /tmp/txtnovelreader-kokoro-cache.wav \
+            --voice zf_xiaoxiao \
+            --speed 1.0
+
+      - name: Create full DMG
+        if: ${{ inputs.package_mode == 'full' }}
+        env:
+          TXTVOICE_TTS_ENV: ${{ env.HOME }}/miniforge/envs/txtnovelreader-kokoro
+        run: |
+          set -euo pipefail
+          scripts/package_full_dmg.sh
+          dmg_path="$(ls -t dist/txtnovelreader-full-*.dmg | head -n 1)"
+          echo "DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
+
+      - name: Build release app
+        if: ${{ inputs.package_mode == 'app-only' }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project TxtVoiceApp.xcodeproj \
+            -scheme TxtVoiceApp \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            build
+
+      - name: Create DMG
+        if: ${{ inputs.package_mode == 'app-only' }}
+        run: |
+          set -euo pipefail
+          app_path="build/DerivedData/Build/Products/Release/txtnovelreader.app"
+          test -d "$app_path"
+
+          rm -rf build/dmg-root dist
+          mkdir -p build/dmg-root dist
+          ditto "$app_path" build/dmg-root/txtnovelreader.app
+          ln -s /Applications build/dmg-root/Applications
+
+          short_sha="${GITHUB_SHA::7}"
+          dmg_path="dist/txtnovelreader-${short_sha}.dmg"
+          hdiutil create \
+            -volname txtnovelreader \
+            -srcfolder build/dmg-root \
+            -ov \
+            -format UDZO \
+            "$dmg_path"
+
+          echo "DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: txtnovelreader-dmg
+          path: ${{ env.DMG_PATH }}
+          if-no-files-found: error

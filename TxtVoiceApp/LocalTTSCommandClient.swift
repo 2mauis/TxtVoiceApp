@@ -81,9 +81,6 @@ enum LocalTTSCommandClient {
                 .replacingOccurrences(of: "{output}", with: outputURL.path)
                 .replacingOccurrences(of: "{voice}", with: settings.resolvedLocalTTSVoice)
                 .replacingOccurrences(of: "{speed}", with: String(format: "%.2f", settings.localTTSSpeed))
-                .replacingOccurrences(of: "{chatterboxVoice}", with: settings.chatterboxVoicePath)
-                .replacingOccurrences(of: "{exaggeration}", with: String(format: "%.2f", settings.chatterboxExaggeration))
-                .replacingOccurrences(of: "{cfgWeight}", with: String(format: "%.2f", settings.chatterboxCFGWeight))
                 .replacingOccurrences(of: "{text}", with: text)
         }
 
@@ -244,8 +241,38 @@ enum LocalTTSCommandClient {
 
     private static func mergedEnvironment() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
+        if let resourceURL = Bundle.main.resourceURL {
+            let localTTSRoot = resourceURL.appendingPathComponent("LocalTTS", isDirectory: true)
+            if FileManager.default.fileExists(atPath: localTTSRoot.path) {
+                environment["TXTNOVELREADER_LOCAL_TTS_ROOT"] = localTTSRoot.path
+                environment["PYTHONNOUSERSITE"] = "1"
+
+                let pythonEnv = localTTSRoot.appendingPathComponent("python-env", isDirectory: true)
+                if FileManager.default.fileExists(atPath: pythonEnv.path) {
+                    environment["CONDA_PREFIX"] = pythonEnv.path
+                    environment["CONDA_DEFAULT_ENV"] = "txtvoice-tts"
+                }
+
+                let huggingFaceHome = localTTSRoot.appendingPathComponent("huggingface", isDirectory: true)
+                if FileManager.default.fileExists(atPath: huggingFaceHome.path) {
+                    environment["HF_HOME"] = huggingFaceHome.path
+                    environment["HUGGINGFACE_HUB_CACHE"] = huggingFaceHome.appendingPathComponent("hub", isDirectory: true).path
+                    environment["TRANSFORMERS_CACHE"] = huggingFaceHome.appendingPathComponent("hub", isDirectory: true).path
+                }
+
+                let torchHome = localTTSRoot.appendingPathComponent("torch", isDirectory: true)
+                if FileManager.default.fileExists(atPath: torchHome.path) {
+                    environment["TORCH_HOME"] = torchHome.path
+                }
+            }
+        }
+
         let path = environment["PATH"] ?? ""
-        let additions = [
+        let bundledBinPath = Bundle.main.resourceURL?
+            .appendingPathComponent("LocalTTS/python-env/bin")
+            .path
+        let additions: [String?] = [
+            bundledBinPath,
             "/opt/homebrew/bin",
             "/opt/homebrew/sbin",
             "/usr/local/bin",
@@ -254,7 +281,7 @@ enum LocalTTSCommandClient {
             "/usr/sbin",
             "/sbin"
         ]
-        environment["PATH"] = (additions + [path])
+        environment["PATH"] = (additions.compactMap { $0 } + [path])
             .filter { !$0.isEmpty }
             .joined(separator: ":")
         environment["PYTHONUNBUFFERED"] = "1"

@@ -3,13 +3,11 @@ import Foundation
 enum TTSEngineChoice: String, CaseIterable, Identifiable, Codable {
     case iosSystem
     case localKokoro
-    case localChatterbox
 
     static var allCases: [TTSEngineChoice] {
         [
             .iosSystem,
-            .localKokoro,
-            .localChatterbox
+            .localKokoro
         ]
     }
 
@@ -21,8 +19,6 @@ enum TTSEngineChoice: String, CaseIterable, Identifiable, Codable {
             return "macOS 系统语音"
         case .localKokoro:
             return "Kokoro 本地 TTS"
-        case .localChatterbox:
-            return "Chatterbox 本地 TTS"
         }
     }
 
@@ -33,8 +29,6 @@ enum TTSEngineChoice: String, CaseIterable, Identifiable, Codable {
             self = .iosSystem
         case Self.localKokoro.rawValue, "localCommand", "kokoro" + "Core" + "ML":
             self = .localKokoro
-        case Self.localChatterbox.rawValue:
-            self = .localChatterbox
         default:
             self = .iosSystem
         }
@@ -136,70 +130,13 @@ enum SystemVoicePreset: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-enum ChatterboxVoicePreset: String, CaseIterable, Identifiable, Codable {
-    case female
-    case male
-    case uncle
-    case matureFemale
-    case custom
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .female:
-            return "女声"
-        case .male:
-            return "男声"
-        case .uncle:
-            return "大叔音"
-        case .matureFemale:
-            return "御姐音"
-        case .custom:
-            return "自定义"
-        }
-    }
-
-    var defaultExaggeration: Double {
-        switch self {
-        case .female:
-            return 0.45
-        case .male:
-            return 0.40
-        case .uncle:
-            return 0.35
-        case .matureFemale:
-            return 0.55
-        case .custom:
-            return 0.50
-        }
-    }
-
-    var defaultCFGWeight: Double {
-        switch self {
-        case .female:
-            return 0.45
-        case .male:
-            return 0.55
-        case .uncle:
-            return 0.60
-        case .matureFemale:
-            return 0.50
-        case .custom:
-            return 0.50
-        }
-    }
-}
-
 struct TTSSettings: Codable, Equatable {
-    static let localPythonCommandPath = "/opt/homebrew/Caskroom/miniforge/base/envs/txtvoice-tts/bin/python"
-    static let kokoroCondaCommandPath = localPythonCommandPath
-    static var kokoroCondaArgumentsTemplate: String {
-        "\(repositoryRootPath)/scripts/local_tts_kokoro.py --input {input} --output {output} --voice {voice} --speed {speed}"
+    static let localPythonCommandPath = "/opt/homebrew/Caskroom/miniforge/base/envs/txtnovelreader-kokoro/bin/python"
+    static var kokoroCondaCommandPath: String {
+        bundledPythonCommandPath ?? localPythonCommandPath
     }
-    static let chatterboxCondaCommandPath = localPythonCommandPath
-    static var chatterboxCondaArgumentsTemplate: String {
-        "\(repositoryRootPath)/scripts/local_tts_chatterbox.py --input {input} --output {output} --model multilingual --language zh --voice {chatterboxVoice} --exaggeration {exaggeration} --cfg-weight {cfgWeight}"
+    static var kokoroCondaArgumentsTemplate: String {
+        "\(bundledOrRepositoryScriptPath("local_tts_kokoro.py")) --input {input} --output {output} --voice {voice} --speed {speed}"
     }
     static let kokoroOutputExtension = "wav"
 
@@ -208,6 +145,30 @@ struct TTSSettings: Codable, Equatable {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .path
+    }
+
+    private static var bundledLocalTTSRoot: URL? {
+        guard let resourceURL = Bundle.main.resourceURL else { return nil }
+        let root = resourceURL.appendingPathComponent("LocalTTS", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else { return nil }
+        return root
+    }
+
+    private static var bundledPythonCommandPath: String? {
+        guard let root = bundledLocalTTSRoot else { return nil }
+        let python = root.appendingPathComponent("python-env/bin/python")
+        guard FileManager.default.fileExists(atPath: python.path) else { return nil }
+        return python.path
+    }
+
+    private static func bundledOrRepositoryScriptPath(_ fileName: String) -> String {
+        if let root = bundledLocalTTSRoot {
+            let bundledScript = root.appendingPathComponent("scripts/\(fileName)")
+            if FileManager.default.fileExists(atPath: bundledScript.path) {
+                return bundledScript.path
+            }
+        }
+        return "\(repositoryRootPath)/scripts/\(fileName)"
     }
 
     var engine: TTSEngineChoice = .iosSystem
@@ -223,10 +184,6 @@ struct TTSSettings: Codable, Equatable {
     var localTTSVoicePreset: LocalTTSVoicePreset = .female
     var localTTSCustomVoice: String = "zf_xiaoxiao"
     var localTTSSpeed: Double = 1.0
-    var chatterboxVoicePreset: ChatterboxVoicePreset = .female
-    var chatterboxVoicePath: String = ""
-    var chatterboxExaggeration: Double = 0.5
-    var chatterboxCFGWeight: Double = 0.5
 
     init() {}
 
@@ -243,10 +200,6 @@ struct TTSSettings: Codable, Equatable {
         localTTSVoicePreset = try values.decodeIfPresent(LocalTTSVoicePreset.self, forKey: .localTTSVoicePreset) ?? localTTSVoicePreset
         localTTSCustomVoice = try values.decodeIfPresent(String.self, forKey: .localTTSCustomVoice) ?? localTTSCustomVoice
         localTTSSpeed = try values.decodeIfPresent(Double.self, forKey: .localTTSSpeed) ?? localTTSSpeed
-        chatterboxVoicePreset = try values.decodeIfPresent(ChatterboxVoicePreset.self, forKey: .chatterboxVoicePreset) ?? chatterboxVoicePreset
-        chatterboxVoicePath = try values.decodeIfPresent(String.self, forKey: .chatterboxVoicePath) ?? chatterboxVoicePath
-        chatterboxExaggeration = try values.decodeIfPresent(Double.self, forKey: .chatterboxExaggeration) ?? chatterboxExaggeration
-        chatterboxCFGWeight = try values.decodeIfPresent(Double.self, forKey: .chatterboxCFGWeight) ?? chatterboxCFGWeight
     }
 }
 
@@ -257,9 +210,6 @@ extension TTSSettings {
             return "\(engine.label) / \(systemVoicePreset.label)"
         case .localKokoro:
             return "\(engine.label) / \(resolvedLocalTTSVoice)"
-        case .localChatterbox:
-            let voice = chatterboxVoicePath.trimmingCharacters(in: .whitespacesAndNewlines)
-            return voice.isEmpty ? "\(engine.label) / \(chatterboxVoicePreset.label)" : "\(engine.label) / \(chatterboxVoicePreset.label) / voice ref"
         }
     }
 
@@ -273,8 +223,6 @@ extension TTSSettings {
 
     var effectiveLocalTTSCommandPath: String {
         switch engine {
-        case .localChatterbox:
-            return Self.chatterboxCondaCommandPath
         case .localKokoro:
             return Self.kokoroCondaCommandPath
         case .iosSystem:
@@ -284,8 +232,6 @@ extension TTSSettings {
 
     var effectiveLocalTTSArgumentsTemplate: String {
         switch engine {
-        case .localChatterbox:
-            return Self.chatterboxCondaArgumentsTemplate
         case .localKokoro:
             return Self.kokoroCondaArgumentsTemplate
         case .iosSystem:
@@ -310,12 +256,8 @@ final class TTSSettingsStore: ObservableObject {
     init() {
         let data = UserDefaults.standard.data(forKey: key) ?? UserDefaults.standard.data(forKey: legacyKey)
         if let data,
-           var decoded = try? JSONDecoder().decode(TTSSettings.self, from: data) {
+            var decoded = try? JSONDecoder().decode(TTSSettings.self, from: data) {
             var shouldSaveMigratedSettings = false
-            if decoded.localTTSArgumentsTemplate?.contains("local_tts_chatterbox.py") == true {
-                decoded.localTTSArgumentsTemplate = TTSSettings.kokoroCondaArgumentsTemplate
-                shouldSaveMigratedSettings = true
-            }
             if decoded.localTTSArgumentsTemplate?.contains("{voice}") == false,
                decoded.localTTSArgumentsTemplate?.contains("local_tts_kokoro.py") == true {
                 decoded.localTTSArgumentsTemplate = TTSSettings.kokoroCondaArgumentsTemplate
