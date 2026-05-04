@@ -54,10 +54,9 @@ jobs:
 
       - name: Create full DMG
         if: ${{ inputs.package_mode == 'full' }}
-        env:
-          TXTVOICE_TTS_ENV: ${{ env.HOME }}/miniforge/envs/txtnovelreader-kokoro
         run: |
           set -euo pipefail
+          export TXTVOICE_TTS_ENV="$HOME/miniforge/envs/txtnovelreader-kokoro"
           scripts/package_full_dmg.sh
           dmg_path="$(ls -t dist/txtnovelreader-full-*.dmg | head -n 1)"
           echo "DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
