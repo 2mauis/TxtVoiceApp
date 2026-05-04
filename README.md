@@ -26,6 +26,17 @@ This is also for fellow novel readers and anime fans.
 - Use Kokoro CoreML through the experimental ANE path.
 - Adjust voice presets and speech speed.
 
+## Reading And Playback Behavior
+
+Playback is treated as the source of truth. The reader highlights the text chunk
+whose audio is actually playing, then advances only after that audio finishes.
+This avoids the common failure mode where text races ahead of the spoken audio.
+
+The main play button and "Start from current reading position" prefer the
+currently visible reading window or the paragraph the user tapped, so scrolling
+to a new passage and pressing play starts from what is on screen instead of an
+older saved progress point.
+
 ## TTS Engines
 
 TxtReadApp does not use Ollama or Gemma as TTS engines. Those tools generate
