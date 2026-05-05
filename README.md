@@ -81,11 +81,22 @@ The Python Kokoro engine prefers the bundled `LocalTTS` runtime when present.
 
 ## Acknowledgements
 
-TxtReadApp's local neural TTS support is built on
-[Kokoro](https://github.com/hexgrad/kokoro) and the ANE/CoreML path uses
-[Soniqo speech-swift](https://github.com/soniqo/speech-swift). Thank you to the
-authors and contributors for making practical open-source speech tooling
-available to the community.
+TxtReadApp's local neural TTS work stands on the Kokoro ecosystem:
+[Kokoro](https://github.com/hexgrad/kokoro) provides the small, practical
+open-source TTS model family that made local novel listening realistic for this
+app.
+
+The native ANE/CoreML path uses
+[Soniqo speech-swift](https://github.com/soniqo/speech-swift), which wraps a
+Kokoro CoreML pipeline behind a Swift API. That project made it possible to test
+a zero-Python inference path inside a macOS app and to let Core ML schedule
+supported model stages on Apple Neural Engine through `computeUnits = .all`.
+
+The Python Kokoro path remains useful as a compatibility and full-package
+fallback, while the Swift ANE path is the lightweight app-only route. Thank you
+to the Kokoro, speech-swift, CoreML conversion, and open-source speech
+contributors for publishing the models, conversion work, runtime code, and
+documentation that made this app possible.
 
 Kokoro, speech-swift, and their model files are third-party open-source
 components. Please refer to the upstream projects for their licenses, model
