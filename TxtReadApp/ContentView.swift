@@ -8,7 +8,7 @@ struct ContentView: View {
     @State private var errorMessage: String?
     @State private var isShowingSettings = false
     @State private var navigationPath: [ImportedBook] = []
-    @AppStorage("txtnovelreader.lastOpenBookID") private var lastOpenBookID = ""
+    @AppStorage("txtreadapp.lastOpenBookID") private var lastOpenBookID = ""
 
     private var txtTypes: [UTType] {
         var types: [UTType] = [.plainText]
@@ -45,7 +45,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("txtnovelreader")
+            .navigationTitle("TxtReadApp")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 8) {

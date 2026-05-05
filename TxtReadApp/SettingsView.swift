@@ -58,7 +58,10 @@ struct SettingsView: View {
                         systemVoiceSection
 
                     case .localKokoro:
-                        kokoroSection
+                        kokoroSection(title: "Kokoro 本地 TTS")
+
+                    case .aneKokoro:
+                        kokoroSection(title: "Kokoro ANE CoreML")
                     }
 
                     diagnosticsSection
@@ -70,8 +73,8 @@ struct SettingsView: View {
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
-    private var kokoroSection: some View {
-        SettingsSection(title: "Kokoro 本地 TTS") {
+    private func kokoroSection(title: String) -> some View {
+        SettingsSection(title: title) {
             SettingsRow("音色") {
                 Picker("", selection: $store.settings.localTTSVoicePreset) {
                     ForEach(LocalTTSVoicePreset.allCases) { preset in
@@ -106,6 +109,15 @@ struct SettingsView: View {
 
             SettingsRow("测试") {
                 localTTSTestButton
+            }
+
+            if store.settings.engine == .aneKokoro {
+                SettingsRow("说明") {
+                    Text("使用 speech-swift 的 Kokoro CoreML 管线，computeUnits=all。首次使用会下载/加载模型，之后同一进程内复用。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if !localTTSTestStatus.isEmpty {
@@ -242,7 +254,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("TTS 设置")
                     .font(.title2.weight(.semibold))
-                Text("配置 macOS 系统语音和 Kokoro 本地 TTS。")
+                Text("配置 macOS 系统语音、Kokoro 本地 TTS 和 Kokoro ANE CoreML。")
                     .foregroundStyle(.secondary)
             }
 
@@ -330,8 +342,8 @@ struct SettingsView: View {
         defer { isTestingLocalTTS = false }
 
         do {
-            let audio = try await LocalTTSCommandClient.synthesize(
-                text: "你好，这是 txtnovelreader 本地语音测试。",
+            let audio = try await RemoteTTSClient.synthesize(
+                text: "你好，这是 TxtReadApp 本地语音测试。",
                 settings: store.settings
             )
             let player = try AVAudioPlayer(data: audio)

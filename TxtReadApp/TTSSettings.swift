@@ -3,11 +3,13 @@ import Foundation
 enum TTSEngineChoice: String, CaseIterable, Identifiable, Codable {
     case iosSystem
     case localKokoro
+    case aneKokoro
 
     static var allCases: [TTSEngineChoice] {
         [
             .iosSystem,
-            .localKokoro
+            .localKokoro,
+            .aneKokoro
         ]
     }
 
@@ -19,6 +21,8 @@ enum TTSEngineChoice: String, CaseIterable, Identifiable, Codable {
             return "macOS 系统语音"
         case .localKokoro:
             return "Kokoro 本地 TTS"
+        case .aneKokoro:
+            return "Kokoro ANE CoreML"
         }
     }
 
@@ -29,6 +33,8 @@ enum TTSEngineChoice: String, CaseIterable, Identifiable, Codable {
             self = .iosSystem
         case Self.localKokoro.rawValue, "localCommand", "kokoro" + "Core" + "ML":
             self = .localKokoro
+        case Self.aneKokoro.rawValue, "kokoroANE", "aneCoreML":
+            self = .aneKokoro
         default:
             self = .iosSystem
         }
@@ -218,6 +224,8 @@ extension TTSSettings {
             return "\(engine.label) / \(systemVoicePreset.label)"
         case .localKokoro:
             return "\(engine.label) / \(resolvedLocalTTSVoice)"
+        case .aneKokoro:
+            return "\(engine.label) / \(resolvedLocalTTSVoice)"
         }
     }
 
@@ -233,7 +241,7 @@ extension TTSSettings {
         switch engine {
         case .localKokoro:
             return Self.kokoroCondaCommandPath
-        case .iosSystem:
+        case .iosSystem, .aneKokoro:
             return localTTSCommandPath ?? Self.kokoroCondaCommandPath
         }
     }
@@ -242,7 +250,7 @@ extension TTSSettings {
         switch engine {
         case .localKokoro:
             return Self.kokoroCondaArgumentsTemplate
-        case .iosSystem:
+        case .iosSystem, .aneKokoro:
             return localTTSArgumentsTemplate ?? Self.kokoroCondaArgumentsTemplate
         }
     }
@@ -258,8 +266,8 @@ final class TTSSettingsStore: ObservableObject {
         didSet { save() }
     }
 
-    private let key = "txtnovelreader.TTSSettings"
-    private let legacyKey = "TxtVoice.TTSSettings"
+    private let key = "txtreadapp.TTSSettings"
+    private let legacyKey = "txtnovelreader.TTSSettings"
 
     init() {
         let data = UserDefaults.standard.data(forKey: key) ?? UserDefaults.standard.data(forKey: legacyKey)

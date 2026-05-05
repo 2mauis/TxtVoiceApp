@@ -17,10 +17,10 @@ final class BookLibraryStore: ObservableObject {
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        self.rootURL = appSupportURL.appendingPathComponent("txtnovelreader", isDirectory: true)
+        self.rootURL = appSupportURL.appendingPathComponent("txtreadapp", isDirectory: true)
         self.importsURL = rootURL.appendingPathComponent("Imports", isDirectory: true)
         self.metadataURL = rootURL.appendingPathComponent("library.json")
-        let legacyAppSupportRootURL = appSupportURL.appendingPathComponent("TxtVoiceApp", isDirectory: true)
+        let legacyAppSupportRootURL = appSupportURL.appendingPathComponent("txtnovelreader", isDirectory: true)
         self.legacyAppSupportImportsURL = legacyAppSupportRootURL.appendingPathComponent("Imports", isDirectory: true)
         self.legacyAppSupportMetadataURL = legacyAppSupportRootURL.appendingPathComponent("library.json")
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]

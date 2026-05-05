@@ -3,7 +3,7 @@ import Foundation
 enum AppLogger {
     static var logURL: URL {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("txtnovelreader", isDirectory: true)
+            .appendingPathComponent("txtreadapp", isDirectory: true)
             .appendingPathComponent("Logs", isDirectory: true)
         return root.appendingPathComponent("app.log")
     }
@@ -48,7 +48,7 @@ enum AppLogger {
                     try data.write(to: url, options: [.atomic])
                 }
             } catch {
-                NSLog("txtnovelreader log write failed: \(error.localizedDescription)")
+                NSLog("txtreadapp log write failed: \(error.localizedDescription)")
             }
         }
     }

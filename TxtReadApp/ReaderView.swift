@@ -13,13 +13,15 @@ struct ReaderView: View {
     @State private var selectedChapter: Chapter?
     @State private var readingParagraphs: [ReadingParagraph] = []
     @State private var focusedParagraphID: Int?
+    @State private var visibleParagraphID: Int?
     @State private var manualPlaybackStartOffset: Int?
     @State private var errorMessage: String?
     @State private var isShowingSettings = false
     @State private var settingsBeforeOpeningSheet: TTSSettings?
     @State private var lastPersistedOffset = 0
     @State private var lastProgressPersistedAt = Date.distantPast
-    @AppStorage("txtnovelreader.followPlayback") private var followPlayback = true
+    @State private var scrollToPlaybackRequest = UUID()
+    @AppStorage("txtreadapp.followPlayback") private var followPlayback = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,6 +74,7 @@ struct ReaderView: View {
         .onChange(of: speech.currentOffset) { _, offset in
             guard offset > 0 else { return }
             persistProgressIfNeeded(offset)
+            guard followPlayback else { return }
             if let chapter = chapter(near: offset), chapter.id != selectedChapter?.id {
                 selectChapter(chapter)
             }
@@ -207,6 +210,14 @@ struct ReaderView: View {
                                 .onTapGesture {
                                     setManualPlaybackStart(paragraph.startOffset)
                                 }
+                                .overlay {
+                                    GeometryReader { geometry in
+                                        Color.clear.preference(
+                                            key: VisibleParagraphPreferenceKey.self,
+                                            value: [paragraph.id: geometry.frame(in: .named("readerScroll")).minY]
+                                        )
+                                    }
+                                }
                                 .id(paragraph.id)
                         }
                     }
@@ -217,6 +228,8 @@ struct ReaderView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
             }
             .background(Color(nsColor: .textBackgroundColor))
+            .coordinateSpace(name: "readerScroll")
+            .onPreferenceChange(VisibleParagraphPreferenceKey.self, perform: updateVisibleParagraph)
             .onAppear {
                 focusReadingWindow(at: library.book(id: book.id)?.lastReadOffset ?? book.lastReadOffset, proxy: proxy, animated: false)
             }
@@ -227,6 +240,10 @@ struct ReaderView: View {
             .onChange(of: selectedChapter?.id) { _, _ in
                 guard followPlayback, let focusedParagraphID else { return }
                 scrollToParagraph(focusedParagraphID, proxy: proxy, animated: false)
+            }
+            .onChange(of: scrollToPlaybackRequest) { _, _ in
+                guard let focusedParagraphID else { return }
+                scrollToParagraph(focusedParagraphID, proxy: proxy, animated: true)
             }
         }
     }
@@ -260,10 +277,19 @@ struct ReaderView: View {
 
     private var currentReadingStartOffset: Int? {
         manualPlaybackStartOffset
+            ?? visibleReadingStartOffset
             ?? focusedParagraphID
             ?? selectedChapter?.startOffset
             ?? library.book(id: book.id)?.lastReadOffset
             ?? book.lastReadOffset
+    }
+
+    private var visibleReadingStartOffset: Int? {
+        guard let visibleParagraphID,
+              readingParagraphs.contains(where: { $0.id == visibleParagraphID }) else {
+            return nil
+        }
+        return visibleParagraphID
     }
 
     private func load() {
@@ -288,6 +314,8 @@ struct ReaderView: View {
         let offset: Int
         if let manualPlaybackStartOffset {
             offset = manualPlaybackStartOffset
+        } else if let visibleReadingStartOffset {
+            offset = visibleReadingStartOffset
         } else if let selectedChapter, latestOffset >= selectedChapter.startOffset, latestOffset < selectedChapter.endOffset {
             offset = latestOffset
         } else {
@@ -374,6 +402,7 @@ struct ReaderView: View {
             selectChapter(chapter)
         }
         setManualPlaybackStart(offset)
+        scrollToPlaybackRequest = UUID()
     }
 
     private func playFromCurrentReadingPosition() {
@@ -393,6 +422,7 @@ struct ReaderView: View {
     private func selectChapter(_ chapter: Chapter?) {
         selectedChapter = chapter
         readingParagraphs = makeReadingParagraphs(for: chapter)
+        visibleParagraphID = nil
         manualPlaybackStartOffset = nil
     }
 
@@ -432,6 +462,16 @@ struct ReaderView: View {
     private func setManualPlaybackStart(_ offset: Int) {
         manualPlaybackStartOffset = offset
         focusReadingWindow(at: offset)
+    }
+
+    private func updateVisibleParagraph(_ positions: [Int: CGFloat]) {
+        guard !positions.isEmpty else { return }
+        let nextID = positions
+            .filter { $0.value >= 0 }
+            .min { $0.value < $1.value }?.key
+            ?? positions.min { abs($0.value) < abs($1.value) }?.key
+        guard let nextID, nextID != visibleParagraphID else { return }
+        visibleParagraphID = nextID
     }
 
     private func makeReadingParagraphs(for chapter: Chapter?) -> [ReadingParagraph] {
@@ -495,6 +535,14 @@ private struct ReadingParagraph: Identifiable, Equatable {
     var startOffset: Int
     var endOffset: Int
     var startsParagraph: Bool
+}
+
+private struct VisibleParagraphPreferenceKey: PreferenceKey {
+    static let defaultValue: [Int: CGFloat] = [:]
+
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
 }
 
 private extension String {

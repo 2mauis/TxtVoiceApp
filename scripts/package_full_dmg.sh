@@ -4,11 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-APP_NAME="txtnovelreader"
-SCHEME="TxtVoiceApp"
-PROJECT="TxtVoiceApp.xcodeproj"
-DERIVED_DATA="${DERIVED_DATA:-/tmp/TxtVoiceMacDerivedDataFullRelease}"
-CONDA_ENV_PATH="${TXTVOICE_TTS_ENV:-/opt/homebrew/Caskroom/miniforge/base/envs/txtnovelreader-kokoro}"
+APP_NAME="txtreadapp"
+SCHEME="TxtReadApp"
+PROJECT="TxtReadApp.xcodeproj"
+DERIVED_DATA="${DERIVED_DATA:-/tmp/TxtReadAppDerivedDataFullRelease}"
+CONDA_ENV_PATH="${TXTREAD_TTS_ENV:-${TXTVOICE_TTS_ENV:-/opt/homebrew/Caskroom/miniforge/base/envs/txtnovelreader-kokoro}}"
 HF_CACHE_ROOT="${HF_CACHE_ROOT:-$HOME/.cache/huggingface}"
 DIST_DIR="$ROOT_DIR/dist"
 BUILD_ROOT="$ROOT_DIR/build/full-dmg"
@@ -22,14 +22,14 @@ KOKORO_REQUIRED_VOICES=(
 
 if [[ ! -x "$CONDA_ENV_PATH/bin/python" ]]; then
   echo "Missing bundled TTS Python env: $CONDA_ENV_PATH" >&2
-  echo "Set TXTVOICE_TTS_ENV to a prepared env containing kokoro." >&2
+  echo "Set TXTREAD_TTS_ENV to a prepared env containing kokoro." >&2
   exit 1
 fi
 
 echo "Warming Kokoro model cache for bundled voices..."
-VOICE_WARM_INPUT="$(mktemp /tmp/txtnovelreader-kokoro-warm.XXXXXX.txt)"
-VOICE_WARM_OUTPUT="$(mktemp /tmp/txtnovelreader-kokoro-warm.XXXXXX.wav)"
-printf "你好，这是 txtnovelreader 本地音色缓存准备。" > "$VOICE_WARM_INPUT"
+VOICE_WARM_INPUT="$(mktemp /tmp/txtreadapp-kokoro-warm.XXXXXX.txt)"
+VOICE_WARM_OUTPUT="$(mktemp /tmp/txtreadapp-kokoro-warm.XXXXXX.wav)"
+printf "你好，这是 TxtReadApp 本地音色缓存准备。" > "$VOICE_WARM_INPUT"
 for voice in "${KOKORO_REQUIRED_VOICES[@]}"; do
   echo "  - $voice"
   "$CONDA_ENV_PATH/bin/python" \
@@ -95,7 +95,7 @@ for voice in "${KOKORO_REQUIRED_VOICES[@]}"; do
 done
 
 cat > "$LOCAL_TTS_ROOT/README.txt" <<'EOF'
-txtnovelreader bundled local TTS runtime
+TxtReadApp bundled local TTS runtime
 
 This directory contains:
 - python-env: bundled Python runtime and Python packages.

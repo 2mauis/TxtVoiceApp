@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate speech with local Kokoro TTS for txtnovelreader.
+"""Generate speech with local Kokoro TTS for TxtReadApp.
 
 Install dependency first:
 
@@ -21,8 +21,8 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="txtnovelreader Kokoro TTS adapter")
-    parser.add_argument("--input", required=True, help="UTF-8 text file from txtnovelreader")
+    parser = argparse.ArgumentParser(description="TxtReadApp Kokoro TTS adapter")
+    parser.add_argument("--input", required=True, help="UTF-8 text file from TxtReadApp")
     parser.add_argument("--output", required=True, help="Output wav file path")
     parser.add_argument("--language", default="z", help="Kokoro language code")
     parser.add_argument("--voice", default="zf_xiaoxiao", help="Kokoro voice name")

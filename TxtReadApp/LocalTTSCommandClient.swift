@@ -4,7 +4,7 @@ import Foundation
 enum LocalTTSCommandClient {
     static func synthesize(text: String, settings: TTSSettings) async throws -> Data {
         let outputDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("txtnovelreader-tts-result-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("txtreadapp-tts-result-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: outputDirectory) }
         let playbackURL = try await synthesizeToFile(
             text: text,
@@ -53,7 +53,7 @@ enum LocalTTSCommandClient {
 
         let outputExtension = sanitizedExtension(settings.effectiveLocalTTSOutputExtension)
         let workDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("txtnovelreader-tts-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("txtreadapp-tts-\(UUID().uuidString)", isDirectory: true)
         let inputURL = workDirectory.appendingPathComponent("input.txt")
         let outputURL = workDirectory.appendingPathComponent("output.\(outputExtension)")
         let playbackURL = workDirectory.appendingPathComponent("playback.m4a")
@@ -331,7 +331,7 @@ enum LocalTTSCommandClient {
             .joined(separator: ":")
         environment["PYTHONUNBUFFERED"] = "1"
         environment["HF_HUB_DISABLE_XET"] = "1"
-        environment["NUMBA_CACHE_DIR"] = "/private/tmp/txtnovelreader-numba-cache"
+        environment["NUMBA_CACHE_DIR"] = "/private/tmp/txtreadapp-numba-cache"
         environment["NUMBA_DISABLE_CACHE"] = "1"
         return environment
     }
